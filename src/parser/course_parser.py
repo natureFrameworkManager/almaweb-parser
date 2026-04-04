@@ -1,8 +1,11 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Tag
 import httpx
+
+MAX_CONCURRENT_COURSE_REQUESTS = 8
 
 @dataclass
 class CourseEvent:
@@ -22,19 +25,34 @@ class Course:
     events: list[CourseEvent]
 
 def handleCourseList(urls: list[str]):
-    courses = []
-    for url in urls:
-        try:
-            if not url.startswith("http"):
-                url = "https://almaweb.uni-leipzig.de" + url
-            response = httpx.get(url)
-            if response.status_code == 200:
-                courses.append(parseCourse(response.text))
-            else:
-                print(f"Failed to fetch details with status code {response.status_code} from URL: {url}")
-        except Exception as e:
-            print(f"An error occurred while fetching details from URL: {url}: {e}")
-    return courses
+    if not urls:
+        return []
+
+    courses_by_index: dict[int, Course | None] = {}
+
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_COURSE_REQUESTS) as executor:
+        futures = [executor.submit(_fetch_and_parse_course, idx, url) for idx, url in enumerate(urls)]
+        for future in as_completed(futures):
+            idx, success, parsed = future.result()
+            if success:
+                courses_by_index[idx] = parsed
+
+    return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
+
+
+def _fetch_and_parse_course(index: int, url: str) -> tuple[int, bool, Course | None]:
+    try:
+        if not url.startswith("http"):
+            url = "https://almaweb.uni-leipzig.de" + url
+        response = httpx.get(url)
+        if response.status_code == 200:
+            return index, True, parseCourse(response.text)
+
+        print(f"Failed to fetch details with status code {response.status_code} from URL: {url}")
+    except Exception as e:
+        print(f"An error occurred while fetching details from URL: {url}: {e}")
+
+    return index, False, None
 
 def parseCourse(html_content: str):
     soup = BeautifulSoup(html_content, 'html.parser')

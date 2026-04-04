@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -6,6 +7,8 @@ from bs4 import BeautifulSoup, Tag
 import httpx
 from .course_parser import Course, handleCourseList
 from ..database.database import insert_module_graph
+
+MAX_CONCURRENT_MODULE_REQUESTS = 4
 
 if TYPE_CHECKING:
     from .crawler import ModuleLink
@@ -27,22 +30,42 @@ class Module:
     courses: list[Course]
 
 def handleModuleList(moduleList: list["ModuleLink"]):
-    modules = []
-    for module in moduleList:
-        try:
-            if not module.url.startswith("http"):
-                module.url = "https://almaweb.uni-leipzig.de" + module.url
-            response = httpx.get(module.url)
-            if response.status_code == 200:
-                parsed = parseModule(response.text, path=module.path)
-                if parsed is not None:
-                    insert_module_graph(parsed)
-                    modules.append(parsed)
-            else:
-                print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {module.url}")
-        except Exception as e:
-            print(f"An error occurred while fetching details for {module.name} under URL: {module.url}: {e}")
+    if not moduleList:
+        return []
+
+    parsed_by_index: dict[int, Module] = {}
+
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
+        futures = [executor.submit(_fetch_and_parse_module, idx, module) for idx, module in enumerate(moduleList)]
+        for future in as_completed(futures):
+            idx, parsed = future.result()
+            if parsed is not None:
+                parsed_by_index[idx] = parsed
+
+    modules: list[Module] = []
+    for idx in sorted(parsed_by_index.keys()):
+        parsed = parsed_by_index[idx]
+        insert_module_graph(parsed)
+        modules.append(parsed)
+
     return modules
+
+
+def _fetch_and_parse_module(index: int, module: "ModuleLink") -> tuple[int, Module | None]:
+    try:
+        url = module.url
+        if not url.startswith("http"):
+            url = "https://almaweb.uni-leipzig.de" + url
+
+        response = httpx.get(url)
+        if response.status_code == 200:
+            return index, parseModule(response.text, path=module.path)
+
+        print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}")
+    except Exception as e:
+        print(f"An error occurred while fetching details for {module.name} under URL: {module.url}: {e}")
+
+    return index, None
 
 def parseModule(html_content: str, path: list[str]) -> Module | None:
     soup = BeautifulSoup(html_content, 'html.parser')
