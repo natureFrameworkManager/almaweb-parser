@@ -1,7 +1,7 @@
-BOT_NAME = "parser"
+BOT_NAME = "almaweb_lecture_parser"
 
-SPIDER_MODULES = ["parser"]
-NEWSPIDER_MODULE = "parser"
+SPIDER_MODULES = ["src.parser"]
+NEWSPIDER_MODULE = "src.parser"
 
 # Be polite: identify ourselves and throttle requests
 USER_AGENT = "AlmaWebParser/1.0 (+https://github.com/almaweb-parser)"

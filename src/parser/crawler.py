@@ -1,5 +1,8 @@
+from typing import Any
+
 import scrapy
 from scrapy.http import Response
+from ..database.database import create_db_and_tables
 
 class TreeNode:
     def __init__(self, name, parent=None):
@@ -34,6 +37,10 @@ class LectureSpider(scrapy.Spider):
     ]
     root_node = TreeNode("Root")
     found_modules = []
+
+    def __init__(self, name: str | None = None, **kwargs: Any):
+        super().__init__(name, **kwargs)
+        create_db_and_tables()
 
     def parse(self, response: Response, parent_node: TreeNode|None = None):
         if parent_node is None:
