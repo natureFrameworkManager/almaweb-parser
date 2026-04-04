@@ -1,10 +1,14 @@
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup, Tag
 import httpx
-from .crawler import ModuleLink
 from .course_parser import Course, handleCourseList
+from ..database.database import insert_module_graph
+
+if TYPE_CHECKING:
+    from .crawler import ModuleLink
 
 @dataclass
 class Module:
@@ -22,7 +26,7 @@ class Module:
     prerequisites: dict[str, str]
     courses: list[Course]
 
-def handleModuleList(moduleList: list[ModuleLink]):
+def handleModuleList(moduleList: list["ModuleLink"]):
     modules = []
     for module in moduleList:
         try:
@@ -32,6 +36,7 @@ def handleModuleList(moduleList: list[ModuleLink]):
             if response.status_code == 200:
                 parsed = parseModule(response.text, path=module.path)
                 if parsed is not None:
+                    insert_module_graph(parsed)
                     modules.append(parsed)
             else:
                 print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {module.url}")
