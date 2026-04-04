@@ -1,0 +1,18 @@
+.env
+database.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
+# Virtual environments
+.venv
+env/
+venv/
+
+# IDE
+.vscode
+.idea
