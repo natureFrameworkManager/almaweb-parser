@@ -12,10 +12,16 @@ engine = create_engine(DATABASE_URL, echo=False)
 
 
 def create_db_and_tables():
+    """
+    Create all database tables defined in the SQLModel metadata, if they do not already exist.
+    """
     SQLModel.metadata.create_all(engine)
 
 
 def get_session():
+    """
+    FastAPI dependency that opens a database session, yields it for use in a request handler, and closes it automatically when the request is done.
+    """
     with Session(engine) as session:
         yield session
 
@@ -24,7 +30,11 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 def _get_or_insert_module(session: Session, module_data: dict) -> tuple[int, bool]:
-    """Return (module_id, was_inserted)."""
+    """
+    Look up a module by number and name. If it does not exist, insert it.
+
+    Returns a tuple of (module_id, was_inserted) where was_inserted is True if a new row was written and False if an existing one was reused.
+    """
     
     # Check if a module with the same number and name already exists
     module = session.exec(
@@ -49,7 +59,11 @@ def _get_or_insert_module(session: Session, module_data: dict) -> tuple[int, boo
 
 
 def _get_or_insert_course(session: Session, course_data: dict, module_id: int) -> tuple[int, bool]:
-    """Return (course_id, was_inserted)."""
+    """
+    Look up a course belonging to the given module by name, number, type, and staff. If it does not exist, insert it.
+
+    Returns a tuple of (course_id, was_inserted) where was_inserted is True if a new row was written and False if an existing one was reused.
+    """
 
     # Check if a course of this module and with the same name, number, type, and staff already exists
     course = session.exec(
@@ -77,7 +91,11 @@ def _get_or_insert_course(session: Session, course_data: dict, module_id: int) -
 
 
 def _insert_event_if_new(session: Session, event_data: dict, course_id: int) -> bool:
-    """Insert the event and return True, or return False if it already exists."""
+    """
+    Insert a course event if no identical record (same course, number, date, time slot, location, and staff) already exists.
+
+    Returns True if a new event was inserted, False if it was skipped as a duplicate.
+    """
 
     # Check if an event of this course with the same number, date, time, location, and staff already exists
     already_exists = session.exec(
@@ -100,9 +118,14 @@ def _insert_event_if_new(session: Session, event_data: dict, course_id: int) -> 
 
 
 def insert_module_graph(module_data: dict) -> tuple[bool, dict]:
-    """Insert newly discovered module, course, and event records.
+    """
+    Insert a complete module graph - the module itself, its courses, and each course's events - skipping any records that already exist.
 
-    Returns True if any new record was written to the database.
+    All inserts are committed in a single transaction. If anything fails, no partial data is written and the exception propagates to the caller.
+
+    Returns a tuple of:
+    - inserted (bool): True if at least one new record was written.
+    - inserted_count (dict): Per-type counts with keys 'modules', 'courses', and 'events'.
     """
     inserted_count = {
         "modules": 0,
@@ -131,5 +154,5 @@ def insert_module_graph(module_data: dict) -> tuple[bool, dict]:
         # Commit all changes to the database at once after processing the entire module graph
         # This doesn't insert any record if any error occurs during the process, so all relationships are guaranteed to be consistent
         session.commit()
-        
+
         return inserted, inserted_count
