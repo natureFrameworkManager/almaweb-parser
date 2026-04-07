@@ -37,9 +37,9 @@ class CourseEvent(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     course_id: int = Field(foreign_key="course.id", index=True)
     number: str = ""
-    event_date: str | date = ""
-    start_time: str | time = ""
-    end_time: str | time = ""
+    event_date: date
+    start_time: time
+    end_time: time
     location: str = ""
     staff: list[str] = Field(sa_column=Column(JSON)) 
     course: "Course" = Relationship(back_populates="events")

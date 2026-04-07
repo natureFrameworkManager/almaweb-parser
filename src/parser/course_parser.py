@@ -39,9 +39,9 @@ months = {
 @dataclass
 class CourseEvent:
     number: str
-    event_date: str | date
-    start_time: str | time
-    end_time: str | time
+    event_date: None | date
+    start_time: None | time
+    end_time: None | time
     location: str
     staff: list[str]
     
@@ -183,22 +183,25 @@ def extract_events(content: Tag | None) -> list[CourseEvent]:
         number, date_str, start_time, end_time, location, staff_text = values
         # Try parse date and time, if fails use strings
         # date format: Fr, 10. Apr. 2026
-        # time format: 14:00^
-        date_search = re.search(r"(\d{1,2})\.\s*(\w{3})\.\s*(\d{4})", date_str)
+        # time format: 14:00
+        date_search = re.search(r"(\d{1,2})\.\s*(\w{3})\.?\s*(\d{4})", date_str)
         if date_search:
             date_str = date(int(date_search.group(3)), months.get(date_search.group(2), 0), int(date_search.group(1)))
         else:
             print(f"Failed to parse date: {date_str}")
+            date_str = None
         start_time_search = re.search(r"(\d{1,2}):(\d{2})", start_time)
         if start_time_search:
             start_time = time(int(start_time_search.group(1)), int(start_time_search.group(2)))
         else:
             print(f"Failed to parse start time: {start_time}")
+            start_time = None
         end_time_search = re.search(r"(\d{1,2}):(\d{2})", end_time)
         if end_time_search:
             end_time = time(int(end_time_search.group(1)), int(end_time_search.group(2)))
         else:
             print(f"Failed to parse end time: {end_time}")
+            end_time = None
         staff = [name.strip() for name in re.split(r"[,;]", staff_text) if name.strip()]
         events.append(CourseEvent(number=number, event_date=date_str, start_time=start_time, end_time=end_time, location=location, staff=staff))
     return events
