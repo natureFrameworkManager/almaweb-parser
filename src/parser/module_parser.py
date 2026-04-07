@@ -135,6 +135,7 @@ def parseModule(html_content: str, path: list[str], cancel_event: Event | None =
         prerequisites=parse_prerequisites(values["prerequisites"]),
         courses=courses,
     )
+    print(f"Parsed module {module.number} - {module.name}. Includes {len(module.courses)} courses and {sum(len(course.events) for course in module.courses)} events.")
     return module
 
 
