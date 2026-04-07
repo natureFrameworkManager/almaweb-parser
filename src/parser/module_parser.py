@@ -1,4 +1,3 @@
-import logging
 import re
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from threading import Event
@@ -9,13 +8,12 @@ from bs4 import BeautifulSoup, Tag
 
 from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
 from ..database.database import insert_module_graph
+from .utils import _WHITESPACE_RE, _cancelled
 
 if TYPE_CHECKING:
     from .crawler import ModuleLink
 
 MAX_CONCURRENT_MODULE_REQUESTS = 4
-
-_WHITESPACE_RE = re.compile(r"\s+")
 
 # German label -> dict key used in the parsed module dict
 _LABEL_MAP: dict[str, str] = {
@@ -29,22 +27,6 @@ _LABEL_MAP: dict[str, str] = {
     "Prüfungsvorleistungen":   "exam_prerequisites",
     "Teilnahmevoraussetzungen": "prerequisites",
 }
-
-
-def _silence_httpx_logs() -> None:
-    for name in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
-        logger = logging.getLogger(name)
-        logger.handlers.clear()
-        logger.propagate = False
-        logger.setLevel(logging.CRITICAL + 1)
-        logger.disabled = True
-
-
-_silence_httpx_logs()
-
-
-def _cancelled(cancel_event: Event | None) -> bool:
-    return cancel_event is not None and cancel_event.is_set()
 
 
 def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None):
