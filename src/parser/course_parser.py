@@ -1,7 +1,8 @@
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import date, time
+from threading import Event
 
 from bs4 import BeautifulSoup, Tag
 import httpx
@@ -40,28 +41,50 @@ class Course:
     language: str
     events: list[CourseEvent]
 
-def handleCourseList(urls: list[str]):
+def handleCourseList(urls: list[str], cancel_event: Event | None = None):
     if not urls:
         return []
 
     courses_by_index: dict[int, Course | None] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_COURSE_REQUESTS) as executor:
-        futures = [executor.submit(_fetch_and_parse_course, idx, url) for idx, url in enumerate(urls)]
-        for future in as_completed(futures):
-            idx, success, parsed = future.result()
-            if success:
-                courses_by_index[idx] = parsed
+        futures = [
+            executor.submit(_fetch_and_parse_course, idx, url, cancel_event)
+            for idx, url in enumerate(urls)
+        ]
+        pending = set(futures)
+        while pending:
+            if cancel_event is not None and cancel_event.is_set():
+                break
+
+            done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            if not done:
+                continue
+
+            for future in done:
+                idx, success, parsed = future.result()
+                if success:
+                    courses_by_index[idx] = parsed
+
+        if cancel_event is not None and cancel_event.is_set():
+            for future in pending:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
 
     return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
 
 
-def _fetch_and_parse_course(index: int, url: str) -> tuple[int, bool, Course | None]:
+def _fetch_and_parse_course(index: int, url: str, cancel_event: Event | None = None) -> tuple[int, bool, Course | None]:
     try:
+        if cancel_event is not None and cancel_event.is_set():
+            return index, False, None
+
         if not url.startswith("http"):
             url = "https://almaweb.uni-leipzig.de" + url
-        response = httpx.get(url)
+        response = httpx.get(url, timeout=15.0)
         if response.status_code == 200:
+            if cancel_event is not None and cancel_event.is_set():
+                return index, False, None
             return index, True, parseCourse(response.text)
 
         print(f"Failed to fetch details with status code {response.status_code} from URL: {url}")

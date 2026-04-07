@@ -1,3 +1,5 @@
+import signal
+from threading import Event
 from typing import Any
 
 import scrapy
@@ -79,8 +81,22 @@ class LectureSpider(scrapy.Spider):
     def closed(self, reason):
         print("Crawling finished. Final tree structure:")
         print(self.tree_to_dict(self.root_node))
+        if reason in {"shutdown", "cancelled"}:
+            print("Parsing cancelled. Skipping module parsing.")
+            return
         print("\nFound modules:")
-        print(handleModuleList(self.found_modules))
+        cancel_event = Event()
+        previous_sigint_handler = signal.getsignal(signal.SIGINT)
+
+        def _request_cancel(signum, frame):
+            cancel_event.set()
+            print("Cancellation requested. Stopping parsing after running tasks finish.")
+
+        try:
+            signal.signal(signal.SIGINT, _request_cancel)
+            print(handleModuleList(self.found_modules, cancel_event=cancel_event))
+        finally:
+            signal.signal(signal.SIGINT, previous_sigint_handler)
 
     def tree_to_dict(self, node):
         return {

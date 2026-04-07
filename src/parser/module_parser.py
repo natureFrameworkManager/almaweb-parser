@@ -1,6 +1,7 @@
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
+from threading import Event
 from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup, Tag
@@ -29,37 +30,59 @@ class Module:
     prerequisites: dict[str, str]
     courses: list[Course]
 
-def handleModuleList(moduleList: list["ModuleLink"]):
+def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None):
     if not moduleList:
         return []
 
     parsed_by_index: dict[int, Module] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
-        futures = [executor.submit(_fetch_and_parse_module, idx, module) for idx, module in enumerate(moduleList)]
-        for future in as_completed(futures):
-            idx, parsed = future.result()
-            if parsed is not None:
-                parsed_by_index[idx] = parsed
+        futures = [
+            executor.submit(_fetch_and_parse_module, idx, module, cancel_event)
+            for idx, module in enumerate(moduleList)
+        ]
+        pending = set(futures)
+        while pending:
+            if cancel_event is not None and cancel_event.is_set():
+                break
 
-    modules: list[Module] = []
-    for idx in sorted(parsed_by_index.keys()):
-        parsed = parsed_by_index[idx]
-        insert_module_graph(parsed)
-        modules.append(parsed)
+            done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            if not done:
+                continue
+
+            for future in done:
+                idx, parsed = future.result()
+                if parsed is not None:
+                    parsed_by_index[idx] = parsed
+                    insert_module_graph(parsed)
+
+        if cancel_event is not None and cancel_event.is_set():
+            for future in pending:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    modules = [parsed_by_index[idx] for idx in sorted(parsed_by_index.keys())]
+
+    if cancel_event is not None and cancel_event.is_set():
+        print(f"Saved {len(modules)} parsed modules before interruption.")
 
     return modules
 
 
-def _fetch_and_parse_module(index: int, module: "ModuleLink") -> tuple[int, Module | None]:
+def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Event | None = None) -> tuple[int, Module | None]:
     try:
+        if cancel_event is not None and cancel_event.is_set():
+            return index, None
+
         url = module.url
         if not url.startswith("http"):
             url = "https://almaweb.uni-leipzig.de" + url
 
-        response = httpx.get(url)
+        response = httpx.get(url, timeout=15.0)
         if response.status_code == 200:
-            return index, parseModule(response.text, path=module.path)
+            if cancel_event is not None and cancel_event.is_set():
+                return index, None
+            return index, parseModule(response.text, path=module.path, cancel_event=cancel_event)
 
         print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}")
     except Exception as e:
@@ -67,7 +90,10 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink") -> tuple[int, Modu
 
     return index, None
 
-def parseModule(html_content: str, path: list[str]) -> Module | None:
+def parseModule(html_content: str, path: list[str], cancel_event: Event | None = None) -> Module | None:
+    if cancel_event is not None and cancel_event.is_set():
+        return None
+
     soup = BeautifulSoup(html_content, 'html.parser')
     # Extract module details using BeautifulSoup
     header = soup.find("h1")
@@ -78,7 +104,7 @@ def parseModule(html_content: str, path: list[str]) -> Module | None:
     values = extract_module_values(soup.select_one("#contentlayoutleft"))
     courses = []
     course_urls = [str(course['href']) for course in soup.find_all("a", attrs={"name": "eventLink"}) if "COURSEDETAILS" in course['href']]
-    courses.extend(handleCourseList(course_urls))
+    courses.extend(handleCourseList(course_urls, cancel_event=cancel_event))
 
     module = Module(
         name=name,
