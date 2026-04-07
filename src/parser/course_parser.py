@@ -117,10 +117,7 @@ def parseCourse(html_content: str):
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
     right_content = soup.select_one("#contentlayoutright")
-    # TODO: fix div select based on title "Termine" instead of fixed position
-    # As the "Anmeldefristen" section can appear before "Termine" for some courses, we need to find the correct div based on its header
-    events_container = right_content.parent.find_all("div", recursive=False)[2] if right_content and isinstance(right_content.parent, Tag) else None
-    events_content = events_container.find("div", recursive=False) if events_container else None
+    events_content = find_termine_section(right_content)
     events = extract_events(events_content)
     course = Course(
         staff=values["staff"].split(", ") if values["staff"] else [],
@@ -130,6 +127,26 @@ def parseCourse(html_content: str):
         events=events
     )
     return course
+
+
+def find_termine_section(right_content: Tag | None) -> Tag | None:
+    if right_content is None or not isinstance(right_content.parent, Tag):
+        return None
+
+    for section in right_content.parent.find_all("div", recursive=False):
+        if not isinstance(section, Tag):
+            continue
+
+        for child in section.children:
+            if isinstance(child, Tag):
+                # Check if the first div contains the header "Termine"
+                if child and (child.get_text(" ", strip=True) == "Termine" or "Termine" in child.get_text(" ", strip=True)):
+                    return child
+
+    print("Failed to find 'Termine' section in course page.")
+    return None
+
+
 def extract_course_values(content: Tag | None) -> dict[str, str]:
     values: dict[str, str] = {
         "staff": "",
