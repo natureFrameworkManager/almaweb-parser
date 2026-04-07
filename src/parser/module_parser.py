@@ -1,16 +1,35 @@
+import logging
 import re
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from dataclasses import dataclass
 from threading import Event
 from typing import TYPE_CHECKING
 
-from bs4 import BeautifulSoup, Tag
 import httpx
-import logging
-from .course_parser import Course, handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
+from bs4 import BeautifulSoup, Tag
+
+from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
 from ..database.database import insert_module_graph
 
+if TYPE_CHECKING:
+    from .crawler import ModuleLink
+
 MAX_CONCURRENT_MODULE_REQUESTS = 4
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+# German label -> dict key used in the parsed module dict
+_LABEL_MAP: dict[str, str] = {
+    "Modulverantwortliche":    "responsible_person",
+    "Dauer":                   "duration_semesters",
+    "Leistungspunkte":         "credits",
+    "Startsemester":           "start_semester",
+    "Turnus":                  "frequency",
+    "Ziele":                   "goals",
+    "Inhalt":                  "content",
+    "Prüfungsvorleistungen":   "exam_prerequisites",
+    "Teilnahmevoraussetzungen": "prerequisites",
+}
+
 
 def _silence_httpx_logs() -> None:
     for name in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
@@ -23,14 +42,14 @@ def _silence_httpx_logs() -> None:
 
 _silence_httpx_logs()
 
-if TYPE_CHECKING:
-    from .crawler import ModuleLink
+
+def _cancelled(cancel_event: Event | None) -> bool:
+    return cancel_event is not None and cancel_event.is_set()
+
 
 def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None):
     if not moduleList:
         return []
-
-    _silence_httpx_logs()
 
     parsed_by_index: dict[int, dict] = {}
 
@@ -50,7 +69,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
             ]
             pending = set(futures)
             while pending:
-                if cancel_event is not None and cancel_event.is_set():
+                if _cancelled(cancel_event):
                     break
 
                 done, pending = wait(pending, timeout=0.01, return_when=FIRST_COMPLETED)
@@ -63,14 +82,14 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                         parsed_by_index[idx] = parsed
                         insert_module_graph(parsed)
 
-            if cancel_event is not None and cancel_event.is_set():
+            if _cancelled(cancel_event):
                 for future in pending:
                     future.cancel()
                 executor.shutdown(wait=False, cancel_futures=True)
 
     modules = [parsed_by_index[idx] for idx in sorted(parsed_by_index.keys())]
 
-    if cancel_event is not None and cancel_event.is_set():
+    if _cancelled(cancel_event):
         print(f"Saved {len(modules)} parsed modules before interruption.")
 
     return modules
@@ -78,7 +97,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
 
 def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, dict | None]:
     try:
-        if cancel_event is not None and cancel_event.is_set():
+        if _cancelled(cancel_event):
             return index, None
 
         url = module.url
@@ -87,7 +106,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Clie
 
         response = client.get(url)
         if response.status_code == 200:
-            if cancel_event is not None and cancel_event.is_set():
+            if _cancelled(cancel_event):
                 return index, None
             return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event)
 
@@ -97,21 +116,24 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Clie
 
     return index, None
 
+
 def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None) -> dict | None:
-    if cancel_event is not None and cancel_event.is_set():
+    if _cancelled(cancel_event):
         return None
 
     soup = BeautifulSoup(html_content, 'html.parser')
-    # Extract module details using BeautifulSoup
     header = soup.find("h1")
     if not header:
         print("Failed to find module header.")
         return None
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_module_values(soup.select_one("#contentlayoutleft"))
-    courses = []
-    course_urls = [str(course['href']) for course in soup.find_all("a", attrs={"name": "eventLink"}) if "COURSEDETAILS" in course['href']]
-    courses.extend(handleCourseList(course_urls, cancel_event=cancel_event, client=client))
+    course_urls = [
+        str(a["href"])
+        for a in soup.find_all("a", attrs={"name": "eventLink"})
+        if "COURSEDETAILS" in a["href"]
+    ]
+    courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client)
 
     module = {
         "name": name,
@@ -148,40 +170,14 @@ def extract_module_values(content: Tag | None) -> dict[str, str]:
         return values
 
     for label_tag in content.select(".font-semibold.break-all"):
-        label = re.compile(r"\s+").sub(" ", label_tag.get_text(" ", strip=True)).rstrip(":")
-        if not label:
+        label = _WHITESPACE_RE.sub(" ", label_tag.get_text(" ", strip=True)).rstrip(":")
+        key = _LABEL_MAP.get(label)
+        if key is None:
             continue
         value_tag = label_tag.find_next_sibling("div")
         if value_tag is None:
             continue
-        value = re.compile(r"\s+").sub(" ", value_tag.get_text(" ", strip=True))
-
-        if label == "Modulverantwortliche":
-            values["responsible_person"] = value
-            continue
-        if label == "Dauer":
-            values["duration_semesters"] = value
-            continue
-        if label == "Leistungspunkte":
-            values["credits"] = value
-            continue
-        if label == "Startsemester":
-            values["start_semester"] = value
-            continue
-        if label == "Turnus":
-            values["frequency"] = value
-            continue
-        if label == "Ziele":
-            values["goals"] = value
-            continue
-        if label == "Inhalt":
-            values["content"] = value
-            continue
-        if label == "Prüfungsvorleistungen":
-            values["exam_prerequisites"] = value
-            continue
-        if label == "Teilnahmevoraussetzungen":
-            values["prerequisites"] = value
+        values[key] = _WHITESPACE_RE.sub(" ", value_tag.get_text(" ", strip=True))
 
     return values
 
@@ -202,8 +198,6 @@ def parse_prerequisites(value: str) -> dict[str, str]:
         return {}
 
     parts = [part.strip() for part in re.split(r"[\r\n]+", value) if part.strip()]
-    if not parts:
-        parts = [value.strip()]
 
     prerequisites: dict[str, str] = {}
     for part in parts:
