@@ -10,7 +10,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from database.database import create_db_and_tables
-from routers import modules, events, courses
+from routers import modules, events, courses, ical
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,4 +37,5 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(modules.router)
 api_router.include_router(courses.router)
 api_router.include_router(events.router)
+api_router.include_router(ical.router)
 app.include_router(api_router)

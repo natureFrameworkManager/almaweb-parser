@@ -3,3 +3,4 @@ sqlmodel
 httpx
 beautifulsoup4
 scrapy
+icalendar
