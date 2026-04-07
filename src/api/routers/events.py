@@ -2,6 +2,8 @@ from collections import defaultdict
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
+from datetime import time
+import re
 
 from database.database import SessionDep
 from database.model import CourseEvent, Course, Module
@@ -30,11 +32,19 @@ def get_events(
 
     # Apply filters based on query parameters
     if date:
-        query = query.where(CourseEvent.date == date)
+        query = query.where(CourseEvent.event_date == date)
     if start_time:
-        query = query.where(CourseEvent.start_time >= start_time)
+        start_time_match = re.match(r"^(\d{2}):(\d{2})$", start_time)
+        if not start_time_match:
+            raise HTTPException(status_code=400, detail="Invalid start_time format. Expected HH:MM.")
+        parsed_start_time = time(int(start_time_match.group(1)), int(start_time_match.group(2)))
+        query = query.where(CourseEvent.start_time >= parsed_start_time)
     if end_time:
-        query = query.where(CourseEvent.end_time <= end_time)
+        end_time_match = re.match(r"^(\d{2}):(\d{2})$", end_time)
+        if not end_time_match:
+            raise HTTPException(status_code=400, detail="Invalid end_time format. Expected HH:MM.")
+        parsed_end_time = time(int(end_time_match.group(1)), int(end_time_match.group(2)))
+        query = query.where(CourseEvent.end_time <= parsed_end_time)
     if location:
         query = query.where(CourseEvent.location.ilike(f"%{location}%")) # type: ignore
     if course_id is not None:
