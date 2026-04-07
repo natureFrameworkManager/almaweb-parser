@@ -11,13 +11,31 @@ router = APIRouter(prefix="/modules", tags=["Modules"])
 
 @router.get("", summary="List all modules")
 def get_modules(
-    session: SessionDep
+    session: SessionDep,
+    name: str | None = Query(None, description="Filter modules by name (case-insensitive, partial match)"),
+    module_number: str | None = Query(None, description="Filter modules by module number (case-insensitive, partial match)"),
+    credits_min: int | None = Query(None, description="Filter modules with credits greater than or equal to this value"),
+    credits_max: int | None = Query(None, description="Filter modules with credits less than or equal to this value"),
+    path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Mathes on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path.")
 ):
     """
     Retrieve a list of all modules
     """
     # Base query: select only Module rows
     query = select(Module)
+
+    # Apply filters based on query parameters
+    if name:
+        query = query.where(Module.name.ilike(f"%{name}%")) # type: ignore
+    if module_number:
+        query = query.where(Module.number.ilike(f"%{module_number}%")) # type: ignore
+    if credits_min is not None:
+        query = query.where(Module.credits >= credits_min)
+    if credits_max is not None:
+        query = query.where(Module.credits <= credits_max)
+    if path_search:
+        # TODO: Substring match on the joinded path array. Path is joined with " > ", so we can search for "Informatik > Softwaretechnik" to match modules in that path.
+        query = query
 
     # Fetch distinct modules (join filters can produce duplicates)
     modules = session.exec(query.distinct()).all()
