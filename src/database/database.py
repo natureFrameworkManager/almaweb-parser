@@ -44,9 +44,15 @@ def insert_module_graph(module_data):
             )
             session.add(module)
             session.flush()
+            if module.id is None:
+                raise RuntimeError("Failed to assign module id after flush")
+            module_id = module.id
             inserted_any = True
         else:
             module = existing_module
+            module_id = module.id
+            if module_id is None:
+                raise RuntimeError("Loaded module has no id")
 
         for course_data in module_data.courses:
             course = session.exec(
@@ -60,7 +66,7 @@ def insert_module_graph(module_data):
             ).first()
             if course is None:
                 course = Course(
-                    module_id=module.id,
+                    module_id=module_id,
                     staff=course_data.staff,
                     type=course_data.type,
                     weekly_hours=course_data.weekly_hours,
@@ -68,12 +74,19 @@ def insert_module_graph(module_data):
                 )
                 session.add(course)
                 session.flush()
+                if course.id is None:
+                    raise RuntimeError("Failed to assign course id after flush")
+                course_id = course.id
                 inserted_any = True
+            else:
+                course_id = course.id
+                if course_id is None:
+                    raise RuntimeError("Loaded course has no id")
 
             for event_data in course_data.events:
                 existing_event = session.exec(
                     select(CourseEvent).where(
-                        CourseEvent.course_id == course.id,
+                        CourseEvent.course_id == course_id,
                         CourseEvent.number == event_data.number,
                         CourseEvent.event_date == event_data.event_date,
                         CourseEvent.start_time == event_data.start_time,
@@ -86,9 +99,9 @@ def insert_module_graph(module_data):
                     continue
 
                 event = CourseEvent(
-                    course_id=course.id,
+                    course_id=course_id,
                     number=event_data.number,
-                    event_date=event_data.date,
+                    event_date=event_data.event_date,
                     start_time=event_data.start_time,
                     end_time=event_data.end_time,
                     location=event_data.location,
