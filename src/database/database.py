@@ -57,6 +57,8 @@ def insert_module_graph(module_data):
         for course_data in module_data.courses:
             course = session.exec(
                 select(Course).where(
+                    Course.name == course_data.name,
+                    Course.number == course_data.number,
                     Course.module_id == module.id,
                     Course.staff == course_data.staff,
                     Course.type == course_data.type,
@@ -66,6 +68,8 @@ def insert_module_graph(module_data):
             ).first()
             if course is None:
                 course = Course(
+                    name=course_data.name,
+                    number=course_data.number,
                     module_id=module_id,
                     staff=course_data.staff,
                     type=course_data.type,

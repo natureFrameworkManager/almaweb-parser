@@ -23,6 +23,8 @@ class Module(SQLModel, table=True):
 
 class Course(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+    number: str = ""
     module_id: int = Field(foreign_key="module.id", index=True)
     staff: list[str] = Field(sa_column=Column(JSON))
     type: str = ""

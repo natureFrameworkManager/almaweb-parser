@@ -47,6 +47,8 @@ class CourseEvent:
     
 @dataclass
 class Course:
+    name: str
+    number: str
     staff: list[str]
     type: str
     weekly_hours: int
@@ -120,6 +122,8 @@ def parseCourse(html_content: str):
     events_content = find_termine_section(right_content)
     events = extract_events(events_content)
     course = Course(
+        name=name,
+        number=number,
         staff=values["staff"].split(", ") if values["staff"] else [],
         type=values["type"],
         weekly_hours=int(values["weekly_hours"]) if values["weekly_hours"].isdigit() else 0,
