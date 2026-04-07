@@ -2,17 +2,32 @@ from collections import defaultdict
 from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import select
-from datetime import time
+from datetime import date, time
 import re
 
 from database.database import SessionDep
 from database.model import CourseEvent, Course, Module
 
+
+class CourseEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    course_id: int | None = None
+    number: str | None = None
+    event_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    location: str | None = None
+    staff: list[str] | None = None
+
+
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
 
-@router.get("", summary="List all Events")
+@router.get("", summary="List all Events", response_model=list[CourseEventRead])
 def get_events(
     session: SessionDep,
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
@@ -101,7 +116,7 @@ def get_events(
     return events
 
 
-@router.get("/{event_id}", summary="Get an event by ID")
+@router.get("/{event_id}", summary="Get an event by ID", response_model=CourseEventRead)
 def get_event(event_id: int, session: SessionDep):
     """
     Retrieve a single event by its ID.

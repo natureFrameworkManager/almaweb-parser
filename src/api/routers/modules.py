@@ -1,16 +1,36 @@
 from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import select
 
 from database.database import SessionDep
 from database.model import Module
 
+
+class ModuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    name: str | None = None
+    number: str | None = None
+    path: list[str] | None = None
+    responsible_person: str | None = None
+    duration_semesters: int | None = None
+    credits: float | None = None
+    start_semester: str | None = None
+    frequency: str | None = None
+    goals: str | None = None
+    content: str | None = None
+    exam_prerequisites: str | None = None
+    prerequisites: dict[str, str] | None = None
+
+
 router = APIRouter(prefix="/modules", tags=["Modules"])
 ModuleField = Enum("ModuleField", {f: f for f in Module.model_fields})
 
 
-@router.get("", summary="List all modules")
+@router.get("", summary="List all modules", response_model=list[ModuleRead])
 def get_modules(
     session: SessionDep,
     name: str | None = Query(None, description="Module name (case-insensitive, partial match)"),
@@ -74,7 +94,7 @@ def get_modules(
     return modules
 
 
-@router.get("/{module_id}", summary="Get a module by ID")
+@router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleRead)
 def get_module(module_id: int, session: SessionDep):
     """
     Retrieve a single module by its ID.

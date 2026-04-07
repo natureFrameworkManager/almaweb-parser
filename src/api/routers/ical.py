@@ -11,7 +11,7 @@ from database.model import CourseEvent, Course, Module
 
 router = APIRouter(prefix="/ical", tags=["iCal"])
 
-@router.get("", summary="Export events as iCal")
+@router.get("", summary="Export events as iCal", response_class=Response)
 def export_ical(
     session: SessionDep,
     date_from: date | None = Query(None, description="Include events on or after this date (YYYY-MM-DD)"),

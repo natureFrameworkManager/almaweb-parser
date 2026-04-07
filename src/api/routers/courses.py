@@ -2,16 +2,31 @@ from collections import defaultdict
 from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import select
 
 from database.database import SessionDep
 from database.model import Course, Module
 
+
+class CourseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    name: str | None = None
+    number: str | None = None
+    staff: list[str] | None = None
+    type: str | None = None
+    weekly_hours: int | None = None
+    language: str | None = None
+    module_id: int | None = None
+
+
 router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 
 
-@router.get("", summary="List all Courses")
+@router.get("", summary="List all Courses", response_model=list[CourseRead])
 def get_courses(
     session: SessionDep,
     name: str | None = Query(None, description="Course name (case-insensitive, partial match)"),
@@ -89,7 +104,7 @@ def get_courses(
     return courses
 
 
-@router.get("/{course_id}", summary="Get a course by ID")
+@router.get("/{course_id}", summary="Get a course by ID", response_model=CourseRead)
 def get_course(course_id: int, session: SessionDep):
     """
     Retrieve a single course by its ID.
