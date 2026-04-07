@@ -71,7 +71,7 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None):
             if cancel_event is not None and cancel_event.is_set():
                 break
 
-            done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            done, pending = wait(pending, timeout=0.01, return_when=FIRST_COMPLETED)
             if not done:
                 continue
 
