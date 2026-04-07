@@ -12,6 +12,8 @@ router = APIRouter(prefix="/courses", tags=["Courses"])
 @router.get("", summary="List all Courses")
 def get_courses(
     session: SessionDep,
+    name: str | None = Query(None, description="Filter courses by name (case-insensitive, partial match)"),
+    number: str | None = Query(None, description="Filter courses by number (case-insensitive, partial match)"),
     type: str | None = Query(None, description="Filter courses by type (case-insensitive, partial match)"),
     language: str | None = Query(None, description="Filter courses by language (case-insensitive, partial match)"),
     staff: str | None = Query(None, description="Filter courses by staff (case-insensitive, partial match)."),
@@ -28,6 +30,10 @@ def get_courses(
     query = select(Course)
 
     # Apply filters based on query parameters
+    if name:
+        query = query.where(Course.name.ilike(f"%{name}%")) # type: ignore
+    if number:
+        query = query.where(Course.number.ilike(f"%{number}%")) # type: ignore
     if type:
         query = query.where(Course.type.ilike(f"%{type}%")) # type: ignore
     if language:
