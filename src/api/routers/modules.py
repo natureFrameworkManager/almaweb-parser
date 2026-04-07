@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
@@ -7,6 +5,7 @@ from database.database import SessionDep
 from database.model import Module
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
+attributes = Module.model_fields.keys()
 
 
 @router.get("", summary="List all modules")
@@ -16,7 +15,8 @@ def get_modules(
     module_number: str | None = Query(None, description="Filter modules by module number (case-insensitive, partial match)"),
     credits_min: int | None = Query(None, description="Filter modules with credits greater than or equal to this value"),
     credits_max: int | None = Query(None, description="Filter modules with credits less than or equal to this value"),
-    path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Mathes on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path.")
+    path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Mathes on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
+    fields: list[attributes] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.")
 ):
     """
     Retrieve a list of all modules
@@ -39,6 +39,37 @@ def get_modules(
 
     # Fetch distinct modules (join filters can produce duplicates)
     modules = session.exec(query.distinct()).all()
+
+    if fields:
+        # Support both repeated query params (?fields=id&fields=name)
+        # and comma-separated values (?fields=id,name).
+        requested_fields = {
+            field.strip()
+            for value in fields
+            for field in value.split(",")
+            if field.strip()
+        }
+        valid_fields = set(Module.model_fields.keys())
+        invalid_fields = sorted(requested_fields - valid_fields)
+
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid fields requested",
+                    "invalid_fields": invalid_fields,
+                    "valid_fields": sorted(valid_fields),
+                },
+            )
+
+        selected_fields = sorted(requested_fields)
+        return [
+            {
+                field: module.model_dump().get(field)
+                for field in selected_fields
+            }
+            for module in modules
+        ]
 
     return modules
 
