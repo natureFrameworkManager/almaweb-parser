@@ -75,7 +75,7 @@ def insert_module_graph(module_data):
                     select(CourseEvent).where(
                         CourseEvent.course_id == course.id,
                         CourseEvent.number == event_data.number,
-                        CourseEvent.date == event_data.date,
+                        CourseEvent.event_date == event_data.event_date,
                         CourseEvent.start_time == event_data.start_time,
                         CourseEvent.end_time == event_data.end_time,
                         CourseEvent.location == event_data.location,
@@ -88,7 +88,7 @@ def insert_module_graph(module_data):
                 event = CourseEvent(
                     course_id=course.id,
                     number=event_data.number,
-                    date=event_data.date,
+                    event_date=event_data.date,
                     start_time=event_data.start_time,
                     end_time=event_data.end_time,
                     location=event_data.location,

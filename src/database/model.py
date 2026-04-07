@@ -1,3 +1,5 @@
+from datetime import time, date
+
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -35,9 +37,9 @@ class CourseEvent(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     course_id: int = Field(foreign_key="course.id", index=True)
     number: str = ""
-    date: str = ""
-    start_time: str = ""
-    end_time: str = ""
+    event_date: str | date = ""
+    start_time: str | time = ""
+    end_time: str | time = ""
     location: str = ""
     staff: list[str] = Field(sa_column=Column(JSON)) 
     course: "Course" = Relationship(back_populates="events")
