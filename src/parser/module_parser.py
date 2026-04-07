@@ -6,10 +6,22 @@ from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup, Tag
 import httpx
+import logging
 from .course_parser import Course, handleCourseList
 from ..database.database import insert_module_graph
 
 MAX_CONCURRENT_MODULE_REQUESTS = 4
+
+def _silence_httpx_logs() -> None:
+    for name in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.propagate = False
+        logger.setLevel(logging.CRITICAL + 1)
+        logger.disabled = True
+
+
+_silence_httpx_logs()
 
 if TYPE_CHECKING:
     from .crawler import ModuleLink
@@ -33,6 +45,8 @@ class Module:
 def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None):
     if not moduleList:
         return []
+
+    _silence_httpx_logs()
 
     parsed_by_index: dict[int, Module] = {}
 

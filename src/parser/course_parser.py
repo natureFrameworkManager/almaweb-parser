@@ -6,8 +6,20 @@ from threading import Event
 
 from bs4 import BeautifulSoup, Tag
 import httpx
+import logging
 
 MAX_CONCURRENT_COURSE_REQUESTS = 8
+
+def _silence_httpx_logs() -> None:
+    for name in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.propagate = False
+        logger.setLevel(logging.CRITICAL + 1)
+        logger.disabled = True
+
+
+_silence_httpx_logs()
 
 months = {
     "Jan": 1,
@@ -44,6 +56,8 @@ class Course:
 def handleCourseList(urls: list[str], cancel_event: Event | None = None):
     if not urls:
         return []
+
+    _silence_httpx_logs()
 
     courses_by_index: dict[int, Course | None] = {}
 
