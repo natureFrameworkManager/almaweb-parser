@@ -51,8 +51,6 @@ class LectureSpider(scrapy.Spider):
         navigationNodes = response.css('a.auditRegNodeLink')
         moduleNodes = [x for x in response.css("a[name='eventLink']") if "MODULEDETAILS" in x.attrib.get("href", "")]
 
-        print(f"Found {len(navigationNodes)} child nodes under {parent_node.name}.")
-        print(f"Found {len(moduleNodes)} module nodes under {parent_node.name}.")
         for anchor in navigationNodes:
             text = anchor.css("::text").get()
             if not text:
@@ -79,12 +77,10 @@ class LectureSpider(scrapy.Spider):
             self.found_modules.append(module_link)
     
     def closed(self, reason):
-        print("Crawling finished. Final tree structure:")
-        print(self.tree_to_dict(self.root_node))
+        print("Crawling finished.")
         if reason in {"shutdown", "cancelled"}:
             print("Parsing cancelled. Skipping module parsing.")
             return
-        print("\nFound modules:")
         cancel_event = Event()
         previous_sigint_handler = signal.getsignal(signal.SIGINT)
 
@@ -94,7 +90,7 @@ class LectureSpider(scrapy.Spider):
 
         try:
             signal.signal(signal.SIGINT, _request_cancel)
-            print(handleModuleList(self.found_modules, cancel_event=cancel_event))
+            handleModuleList(self.found_modules, cancel_event=cancel_event)
         finally:
             signal.signal(signal.SIGINT, previous_sigint_handler)
 
