@@ -20,9 +20,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="Almaweb API",
-    summary="Parsed data from almaweb API",
-    description="API for accessing parsed data from almaweb API, which includes modules, courses, and events.",
+    title="AlmaWeb API",
+    summary="Parsed data from AlmaWeb in a structured format",
+    description="API for accessing parsed data from AlmaWeb, which includes modules, courses, and events. Faster and more convenient than navigating the large website tree directly, with additional filtering and querying capabilities.",
     version="1.0.0",
 )
 

@@ -15,17 +15,17 @@ EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
 @router.get("", summary="List all Events")
 def get_events(
     session: SessionDep,
-    date: str | None = Query(None, description="Filter events by date (YYYY-MM-DD)"),
-    start_time: str | None = Query(None, description="Filter events that start at or after this time (HH:MM)"),
-    end_time: str | None = Query(None, description="Filter events that end at or before this time (HH:MM)"),
-    location: str | None = Query(None, description="Filter events by location (case-insensitive, partial match)"),
-    course_id: int | None = Query(None, description="Filter events that belong to the specified course ID"),
-    course_name: str | None = Query(None, description="Filter events that belong to a course with the specified name (case-insensitive, partial match)"),
-    course_number: str | None = Query(None, description="Filter events that belong to a course with the specified number (case-insensitive, partial match)"),
-    course_type: str | None = Query(None, description="Filter events that belong to a course with the specified type (case-insensitive, partial match)"),
-    module_id: int | None = Query(None, description="Filter events that belong to a course in the specified module ID"),
-    module_name: str | None = Query(None, description="Filter events that belong to a course in a module with the specified name (case-insensitive, partial match)"),
-    module_number: str | None = Query(None, description="Filter events that belong to a course in a module with the specified module number (case-insensitive, partial match)"),
+    date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
+    start_time: str | None = Query(None, description="Event start time (HH:MM)"),
+    end_time: str | None = Query(None, description="Event end time (HH:MM)"),
+    location: str | None = Query(None, description="Event location (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    course_number: str | None = Query(None, description="Number of the course the event belongs to (case-insensitive, partial match)"),
+    course_type: str | None = Query(None, description="Type of the course the event belongs to (case-insensitive, partial match)"),
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
     fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """

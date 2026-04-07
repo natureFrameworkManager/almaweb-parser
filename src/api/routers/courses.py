@@ -14,16 +14,16 @@ CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 @router.get("", summary="List all Courses")
 def get_courses(
     session: SessionDep,
-    name: str | None = Query(None, description="Filter courses by name (case-insensitive, partial match)"),
-    number: str | None = Query(None, description="Filter courses by number (case-insensitive, partial match)"),
-    type: str | None = Query(None, description="Filter courses by type (case-insensitive, partial match)"),
-    language: str | None = Query(None, description="Filter courses by language (case-insensitive, partial match)"),
-    staff: str | None = Query(None, description="Filter courses by staff (case-insensitive, partial match)."),
-    weekly_hours_min: int | None = Query(None, description="Filter courses with weekly hours greater than or equal to this value"),
-    weekly_hours_max: int | None = Query(None, description="Filter courses with weekly hours less than or equal to this value"),
-    module_id: int | None = Query(None, description="Filter courses that belong to the specified module ID"),
-    module_name: str | None = Query(None, description="Filter courses that belong to a module with the specified name (case-insensitive, partial match)"),
-    module_number: str | None = Query(None, description="Filter courses that belong to a module with the specified module number (case-insensitive, partial match)"),
+    name: str | None = Query(None, description="Course name (case-insensitive, partial match)"),
+    number: str | None = Query(None, description="Course number (case-insensitive, partial match)"),
+    type: str | None = Query(None, description="Course type (case-insensitive, partial match), (e.g. \"Vorlesung\", \"Seminar\", etc.)"),
+    language: str | None = Query(None, description="Course language (case-insensitive, partial match)"),
+    staff: str | None = Query(None, description="Course staff (case-insensitive, partial match)."),
+    weekly_hours_min: int | None = Query(None, description="Minimum weekly hours for the course"),
+    weekly_hours_max: int | None = Query(None, description="Maximum weekly hours for the course"),
+    module_id: int | None = Query(None, description="ID of the module the course belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the course belongs to (case-insensitive, partial match)"),
+    module_number: str | None = Query(None, description="Number of the module the course belongs to (case-insensitive, partial match)"),
     fields: list[CourseField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """

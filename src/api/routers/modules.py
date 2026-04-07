@@ -13,11 +13,11 @@ ModuleField = Enum("ModuleField", {f: f for f in Module.model_fields})
 @router.get("", summary="List all modules")
 def get_modules(
     session: SessionDep,
-    name: str | None = Query(None, description="Filter modules by name (case-insensitive, partial match)"),
-    module_number: str | None = Query(None, description="Filter modules by module number (case-insensitive, partial match)"),
-    credits_min: int | None = Query(None, description="Filter modules with credits greater than or equal to this value"),
-    credits_max: int | None = Query(None, description="Filter modules with credits less than or equal to this value"),
-    path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Mathes on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
+    name: str | None = Query(None, description="Module name (case-insensitive, partial match)"),
+    module_number: str | None = Query(None, description="Module number (case-insensitive, partial match)"),
+    credits_min: int | None = Query(None, description="Minimum credits for the module"),
+    credits_max: int | None = Query(None, description="Maximum credits for the module"),
+    path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Matches on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
     fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
