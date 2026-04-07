@@ -38,7 +38,7 @@ months = {
     "Dez": 12
 }
 
-def handleCourseList(urls: list[str], cancel_event: Event | None = None):
+def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None):
     if not urls:
         return []
 
@@ -46,41 +46,54 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None):
 
     courses_by_index: dict[int, dict | None] = {}
 
-    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_COURSE_REQUESTS) as executor:
-        futures = [
-            executor.submit(_fetch_and_parse_course, idx, url, cancel_event)
-            for idx, url in enumerate(urls)
-        ]
-        pending = set(futures)
-        while pending:
+    own_client = client is None
+    if own_client:
+        limits = httpx.Limits(
+            max_connections=MAX_CONCURRENT_COURSE_REQUESTS,
+            max_keepalive_connections=MAX_CONCURRENT_COURSE_REQUESTS,
+        )
+        client = httpx.Client(limits=limits, timeout=15.0)
+    assert client is not None
+
+    try:
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_COURSE_REQUESTS) as executor:
+            futures = [
+                executor.submit(_fetch_and_parse_course, idx, url, client, cancel_event)
+                for idx, url in enumerate(urls)
+            ]
+            pending = set(futures)
+            while pending:
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+
+                done, pending = wait(pending, timeout=0.01, return_when=FIRST_COMPLETED)
+                if not done:
+                    continue
+
+                for future in done:
+                    idx, success, parsed = future.result()
+                    if success:
+                        courses_by_index[idx] = parsed
+
             if cancel_event is not None and cancel_event.is_set():
-                break
-
-            done, pending = wait(pending, timeout=0.01, return_when=FIRST_COMPLETED)
-            if not done:
-                continue
-
-            for future in done:
-                idx, success, parsed = future.result()
-                if success:
-                    courses_by_index[idx] = parsed
-
-        if cancel_event is not None and cancel_event.is_set():
-            for future in pending:
-                future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
+                for future in pending:
+                    future.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+    finally:
+        if own_client:
+            client.close()
 
     return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
 
 
-def _fetch_and_parse_course(index: int, url: str, cancel_event: Event | None = None) -> tuple[int, bool, dict | None]:
+def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, bool, dict | None]:
     try:
         if cancel_event is not None and cancel_event.is_set():
             return index, False, None
 
         if not url.startswith("http"):
             url = "https://almaweb.uni-leipzig.de" + url
-        response = httpx.get(url, timeout=15.0)
+        response = client.get(url)
         if response.status_code == 200:
             if cancel_event is not None and cancel_event.is_set():
                 return index, False, None

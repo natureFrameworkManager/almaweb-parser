@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from bs4 import BeautifulSoup, Tag
 import httpx
 import logging
-from .course_parser import Course, handleCourseList
+from .course_parser import Course, handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
 from ..database.database import insert_module_graph
 
 MAX_CONCURRENT_MODULE_REQUESTS = 4
@@ -34,30 +34,39 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
 
     parsed_by_index: dict[int, dict] = {}
 
-    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
-        futures = [
-            executor.submit(_fetch_and_parse_module, idx, module, cancel_event)
-            for idx, module in enumerate(moduleList)
-        ]
-        pending = set(futures)
-        while pending:
+    # One shared client for all module and course requests; the pool size covers
+    # up to MAX_CONCURRENT_MODULE_REQUESTS modules each fetching
+    # MAX_CONCURRENT_COURSE_REQUESTS courses in parallel.
+    total_connections = MAX_CONCURRENT_MODULE_REQUESTS * MAX_CONCURRENT_COURSE_REQUESTS
+    limits = httpx.Limits(
+        max_connections=total_connections,
+        max_keepalive_connections=total_connections,
+    )
+    with httpx.Client(limits=limits, timeout=15.0) as client:
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
+            futures = [
+                executor.submit(_fetch_and_parse_module, idx, module, client, cancel_event)
+                for idx, module in enumerate(moduleList)
+            ]
+            pending = set(futures)
+            while pending:
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+
+                done, pending = wait(pending, timeout=0.01, return_when=FIRST_COMPLETED)
+                if not done:
+                    continue
+
+                for future in done:
+                    idx, parsed = future.result()
+                    if parsed is not None:
+                        parsed_by_index[idx] = parsed
+                        insert_module_graph(parsed)
+
             if cancel_event is not None and cancel_event.is_set():
-                break
-
-            done, pending = wait(pending, timeout=0.01, return_when=FIRST_COMPLETED)
-            if not done:
-                continue
-
-            for future in done:
-                idx, parsed = future.result()
-                if parsed is not None:
-                    parsed_by_index[idx] = parsed
-                    insert_module_graph(parsed)
-
-        if cancel_event is not None and cancel_event.is_set():
-            for future in pending:
-                future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
+                for future in pending:
+                    future.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
 
     modules = [parsed_by_index[idx] for idx in sorted(parsed_by_index.keys())]
 
@@ -67,7 +76,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
     return modules
 
 
-def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Event | None = None) -> tuple[int, dict | None]:
+def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, dict | None]:
     try:
         if cancel_event is not None and cancel_event.is_set():
             return index, None
@@ -76,11 +85,11 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Even
         if not url.startswith("http"):
             url = "https://almaweb.uni-leipzig.de" + url
 
-        response = httpx.get(url, timeout=15.0)
+        response = client.get(url)
         if response.status_code == 200:
             if cancel_event is not None and cancel_event.is_set():
                 return index, None
-            return index, parseModule(response.text, path=module.path, cancel_event=cancel_event)
+            return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event)
 
         print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}")
     except Exception as e:
@@ -88,7 +97,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Even
 
     return index, None
 
-def parseModule(html_content: str, path: list[str], cancel_event: Event | None = None) -> dict | None:
+def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None) -> dict | None:
     if cancel_event is not None and cancel_event.is_set():
         return None
 
@@ -102,7 +111,7 @@ def parseModule(html_content: str, path: list[str], cancel_event: Event | None =
     values = extract_module_values(soup.select_one("#contentlayoutleft"))
     courses = []
     course_urls = [str(course['href']) for course in soup.find_all("a", attrs={"name": "eventLink"}) if "COURSEDETAILS" in course['href']]
-    courses.extend(handleCourseList(course_urls, cancel_event=cancel_event))
+    courses.extend(handleCourseList(course_urls, cancel_event=cancel_event, client=client))
 
     module = {
         "name": name,
