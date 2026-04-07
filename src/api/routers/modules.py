@@ -1,3 +1,5 @@
+from enum import Enum
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
@@ -5,7 +7,7 @@ from database.database import SessionDep
 from database.model import Module
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
-attributes = Module.model_fields.keys()
+ModuleField = Enum("ModuleField", {f: f for f in Module.model_fields})
 
 
 @router.get("", summary="List all modules")
@@ -16,7 +18,7 @@ def get_modules(
     credits_min: int | None = Query(None, description="Filter modules with credits greater than or equal to this value"),
     credits_max: int | None = Query(None, description="Filter modules with credits less than or equal to this value"),
     path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Mathes on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
-    fields: list[attributes] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.")
+    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
     Retrieve a list of all modules
@@ -41,12 +43,10 @@ def get_modules(
     modules = session.exec(query.distinct()).all()
 
     if fields:
-        # Support both repeated query params (?fields=id&fields=name)
-        # and comma-separated values (?fields=id,name).
         requested_fields = {
             field.strip()
             for value in fields
-            for field in value.split(",")
+            for field in value.value.split(",")
             if field.strip()
         }
         valid_fields = set(Module.model_fields.keys())

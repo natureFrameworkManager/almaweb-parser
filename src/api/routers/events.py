@@ -1,4 +1,5 @@
 from collections import defaultdict
+from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
@@ -9,7 +10,7 @@ from database.database import SessionDep
 from database.model import CourseEvent, Course, Module
 
 router = APIRouter(prefix="/events", tags=["Events"])
-
+EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
 
 @router.get("", summary="List all Events")
 def get_events(
@@ -25,6 +26,7 @@ def get_events(
     module_id: int | None = Query(None, description="Filter events that belong to a course in the specified module ID"),
     module_name: str | None = Query(None, description="Filter events that belong to a course in a module with the specified name (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Filter events that belong to a course in a module with the specified module number (case-insensitive, partial match)"),
+    fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
     Retrieve a list of all events
@@ -66,6 +68,35 @@ def get_events(
 
     # Fetch distinct events (join filters can produce duplicates)
     events = session.exec(query.distinct()).all()
+
+    if fields:
+        requested_fields = {
+            field.strip()
+            for value in fields
+            for field in value.value.split(",")
+            if field.strip()
+        }
+        valid_fields = set(CourseEvent.model_fields.keys())
+        invalid_fields = sorted(requested_fields - valid_fields)
+
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid fields requested",
+                    "invalid_fields": invalid_fields,
+                    "valid_fields": sorted(valid_fields),
+                },
+            )
+
+        selected_fields = sorted(requested_fields)
+        return [
+            {
+                field: event.model_dump().get(field)
+                for field in selected_fields
+            }
+            for event in events
+        ]
 
     return events
 

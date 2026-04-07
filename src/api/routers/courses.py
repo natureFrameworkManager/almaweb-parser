@@ -1,4 +1,5 @@
 from collections import defaultdict
+from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
@@ -7,6 +8,7 @@ from database.database import SessionDep
 from database.model import Course, Module
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
+CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 
 
 @router.get("", summary="List all Courses")
@@ -22,6 +24,7 @@ def get_courses(
     module_id: int | None = Query(None, description="Filter courses that belong to the specified module ID"),
     module_name: str | None = Query(None, description="Filter courses that belong to a module with the specified name (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Filter courses that belong to a module with the specified module number (case-insensitive, partial match)"),
+    fields: list[CourseField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
     Retrieve a list of all courses
@@ -53,6 +56,35 @@ def get_courses(
 
     # Fetch distinct courses (join filters can produce duplicates)
     courses = session.exec(query.distinct()).all()
+
+    if fields:
+        requested_fields = {
+            field.strip()
+            for value in fields
+            for field in value.value.split(",")
+            if field.strip()
+        }
+        valid_fields = set(Course.model_fields.keys())
+        invalid_fields = sorted(requested_fields - valid_fields)
+
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid fields requested",
+                    "invalid_fields": invalid_fields,
+                    "valid_fields": sorted(valid_fields),
+                },
+            )
+
+        selected_fields = sorted(requested_fields)
+        return [
+            {
+                field: course.model_dump().get(field)
+                for field in selected_fields
+            }
+            for course in courses
+        ]
 
     return courses
 
