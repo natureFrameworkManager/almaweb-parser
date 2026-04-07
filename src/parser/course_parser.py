@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup, Tag
 import httpx
 import logging
 
+from src.database.database import Course, CourseEvent
+
 MAX_CONCURRENT_COURSE_REQUESTS = 8
 
 def _silence_httpx_logs() -> None:
@@ -36,32 +38,13 @@ months = {
     "Dez": 12
 }
 
-@dataclass
-class CourseEvent:
-    number: str
-    event_date: None | date
-    start_time: None | time
-    end_time: None | time
-    location: str
-    staff: list[str]
-    
-@dataclass
-class Course:
-    name: str
-    number: str
-    staff: list[str]
-    type: str
-    weekly_hours: int
-    language: str
-    events: list[CourseEvent]
-
 def handleCourseList(urls: list[str], cancel_event: Event | None = None):
     if not urls:
         return []
 
     _silence_httpx_logs()
 
-    courses_by_index: dict[int, Course | None] = {}
+    courses_by_index: dict[int, dict | None] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_COURSE_REQUESTS) as executor:
         futures = [
@@ -90,7 +73,7 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None):
     return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
 
 
-def _fetch_and_parse_course(index: int, url: str, cancel_event: Event | None = None) -> tuple[int, bool, Course | None]:
+def _fetch_and_parse_course(index: int, url: str, cancel_event: Event | None = None) -> tuple[int, bool, dict | None]:
     try:
         if cancel_event is not None and cancel_event.is_set():
             return index, False, None
@@ -121,15 +104,15 @@ def parseCourse(html_content: str):
     right_content = soup.select_one("#contentlayoutright")
     events_content = find_termine_section(right_content)
     events = extract_events(events_content)
-    course = Course(
-        name=name,
-        number=number,
-        staff=values["staff"].split(", ") if values["staff"] else [],
-        type=values["type"],
-        weekly_hours=int(values["weekly_hours"]) if values["weekly_hours"].isdigit() else 0,
-        language=values["language"],
-        events=events
-    )
+    course = {
+        "name": name,
+        "number": number,
+        "staff": values["staff"].split(", ") if values["staff"] else [],
+        "type": values["type"],
+        "weekly_hours": int(values["weekly_hours"]) if values["weekly_hours"].isdigit() else 0,
+        "language": values["language"],
+        "events": events
+    }
     return course
 
 
@@ -188,7 +171,7 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
                 values["language"] = span.get_text(strip=True)
     return values
 
-def extract_events(content: Tag | None) -> list[CourseEvent]:
+def extract_events(content: Tag | None) -> list[dict[str, str | list[str] | date | time | None]]:
     events = []
     if content is None:
         print("No events content found for course.")
@@ -224,5 +207,5 @@ def extract_events(content: Tag | None) -> list[CourseEvent]:
             print(f"Failed to parse end time: {end_time}")
             end_time = None
         staff = [name.strip() for name in re.split(r"[,;]", staff_text) if name.strip()]
-        events.append(CourseEvent(number=number, event_date=date_str, start_time=start_time, end_time=end_time, location=location, staff=staff))
+        events.append({"number": number, "event_date": date_str, "start_time": start_time, "end_time": end_time, "location": location, "staff": staff})
     return events

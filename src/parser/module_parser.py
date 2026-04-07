@@ -26,29 +26,13 @@ _silence_httpx_logs()
 if TYPE_CHECKING:
     from .crawler import ModuleLink
 
-@dataclass
-class Module:
-    name: str
-    number: str
-    path: list[str]
-    responsible_person: str
-    duration_semesters: int
-    credits: float
-    start_semester: str
-    frequency: str
-    goals: str
-    content: str
-    exam_prerequisites: str
-    prerequisites: dict[str, str]
-    courses: list[Course]
-
 def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None):
     if not moduleList:
         return []
 
     _silence_httpx_logs()
 
-    parsed_by_index: dict[int, Module] = {}
+    parsed_by_index: dict[int, dict] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
         futures = [
@@ -83,7 +67,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
     return modules
 
 
-def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Event | None = None) -> tuple[int, Module | None]:
+def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Event | None = None) -> tuple[int, dict | None]:
     try:
         if cancel_event is not None and cancel_event.is_set():
             return index, None
@@ -104,7 +88,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", cancel_event: Even
 
     return index, None
 
-def parseModule(html_content: str, path: list[str], cancel_event: Event | None = None) -> Module | None:
+def parseModule(html_content: str, path: list[str], cancel_event: Event | None = None) -> dict | None:
     if cancel_event is not None and cancel_event.is_set():
         return None
 
@@ -120,22 +104,22 @@ def parseModule(html_content: str, path: list[str], cancel_event: Event | None =
     course_urls = [str(course['href']) for course in soup.find_all("a", attrs={"name": "eventLink"}) if "COURSEDETAILS" in course['href']]
     courses.extend(handleCourseList(course_urls, cancel_event=cancel_event))
 
-    module = Module(
-        name=name,
-        number=number,
-        path=path,
-        responsible_person=values["responsible_person"],
-        duration_semesters=parse_int(values["duration_semesters"]),
-        credits=parse_float(values["credits"]),
-        start_semester=values["start_semester"],
-        frequency=values["frequency"],
-        goals=values["goals"],
-        content=values["content"],
-        exam_prerequisites=values["exam_prerequisites"],
-        prerequisites=parse_prerequisites(values["prerequisites"]),
-        courses=courses,
-    )
-    print(f"Parsed module {module.number} - {module.name}. Includes {len(module.courses)} courses and {sum(len(course.events) for course in module.courses)} events.")
+    module = {
+        "name": name,
+        "number": number,
+        "path": path,
+        "responsible_person": values["responsible_person"],
+        "duration_semesters": parse_int(values["duration_semesters"]),
+        "credits": parse_float(values["credits"]),
+        "start_semester": values["start_semester"],
+        "frequency": values["frequency"],
+        "goals": values["goals"],
+        "content": values["content"],
+        "exam_prerequisites": values["exam_prerequisites"],
+        "prerequisites": parse_prerequisites(values["prerequisites"]),
+        "courses": courses,
+    }
+    print(f"Parsed module {module['number']} - {module['name']}. Includes {len(module['courses'])} courses and {sum(len(course['events']) for course in module['courses'])} events.")
     return module
 
 
