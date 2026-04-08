@@ -5,12 +5,12 @@ from typing import Any, Sequence
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
 from database.model import Course, CourseEvent, Module
+from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
@@ -62,7 +62,7 @@ def _attach_module_relations(
     return items
 
 
-@router.get("", summary="List all modules")
+@router.get("", summary="List all modules", response_model=ModuleListResponseModel)
 def get_modules(
     session: SessionDep,
     name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
@@ -210,7 +210,7 @@ def get_modules(
     }
 
 
-@router.get("/{module_id}", summary="Get a module by ID")
+@router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleDetailResponseModel)
 def get_module(
     module_id: int,
     session: SessionDep,

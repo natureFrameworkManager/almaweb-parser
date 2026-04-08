@@ -5,7 +5,6 @@ from typing import Annotated, Any, Sequence
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlmodel import select
 from datetime import date, time
@@ -13,6 +12,7 @@ import re
 
 from database.database import SessionDep
 from database.model import CourseEvent, Course, Module
+from schemas.events import EventDetailResponseModel, EventListResponseModel
 
 
 router = APIRouter(prefix="/events", tags=["Events"])
@@ -70,7 +70,7 @@ def parse_hhmm_time(value: str, param_name: str) -> time:
         raise HTTPException(status_code=400, detail=f"Invalid {param_name} format. Expected HH:MM.")
     return time(hours, minutes)
 
-@router.get("", summary="List all Events")
+@router.get("", summary="List all Events", response_model=EventListResponseModel)
 def get_events(
     session: SessionDep,
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
@@ -215,7 +215,7 @@ def get_events(
     }
 
 
-@router.get("/{event_id}", summary="Get an event by ID")
+@router.get("/{event_id}", summary="Get an event by ID", response_model=EventDetailResponseModel)
 def get_event(
     event_id: int,
     session: SessionDep,
