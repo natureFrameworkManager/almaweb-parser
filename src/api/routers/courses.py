@@ -13,27 +13,6 @@ from database.database import SessionDep
 from database.model import Course, CourseEvent, Module
 
 
-class CourseRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int | None = None
-    name: str | None = None
-    number: str | None = None
-    staff: list[str] | None = None
-    type: str | None = None
-    weekly_hours: int | None = None
-    language: str | None = None
-    module_id: int | None = None
-
-
-class CourseListResponse(BaseModel):
-    count: int
-    page: int
-    limit: int | None
-    total_pages: int | None
-    items: list[CourseRead | dict[str, Any]]
-
-
 router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 
