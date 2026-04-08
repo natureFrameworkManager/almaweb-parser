@@ -53,7 +53,7 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
 - [x] Add filters for multiple modules or courses at once (e.g. `?module_id=123&module_id=456`)
 - [ ] Add a `last_updated` timestamp to each datapoint
 - [x] Add optional paging and limiting
-- [ ] Add more filters and fields to the single entity endpoints
+- [x] Add more filters and fields to the single entity endpoints
 - [ ] Add more filters
    - [x] Modules: filter by `responsible_person`, `start_semester`, and `frequency`
    - [x] Modules: add `duration_semesters_min` / `duration_semesters_max`

@@ -170,8 +170,12 @@ def get_modules(
     }
 
 
-@router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleRead)
-def get_module(module_id: int, session: SessionDep):
+@router.get("/{module_id}", summary="Get a module by ID")
+def get_module(
+    module_id: int,
+    session: SessionDep,
+    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+):
     """
     Retrieve a single module by its ID.
 
@@ -180,5 +184,31 @@ def get_module(module_id: int, session: SessionDep):
     module = session.get(Module, module_id)
     if module is None:
         raise HTTPException(status_code=404, detail="Module not found")
+
+    if fields:
+        requested_fields = {
+            field.strip()
+            for value in fields
+            for field in value.value.split(",")
+            if field.strip()
+        }
+        valid_fields = set(Module.model_fields.keys())
+        invalid_fields = sorted(requested_fields - valid_fields)
+
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid fields requested",
+                    "invalid_fields": invalid_fields,
+                    "valid_fields": sorted(valid_fields),
+                },
+            )
+
+        selected_fields = sorted(requested_fields)
+        return {
+            field: module.model_dump().get(field)
+            for field in selected_fields
+        }
 
     return module
