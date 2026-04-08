@@ -61,7 +61,7 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
    - [ ] Modules: support filtering by specific `path` segments or exact path prefixes instead of only free-text path search
    - [ ] Courses: filter by exact staff members within the parsed `staff` list
    - [x] Courses: allow multi-value filters for `type`, `language`, and `module_id`
-   - [ ] Courses: add a `has_events` filter to distinguish timetable-backed courses from metadata-only entries
+   - [x] Courses: add a `has_events` filter to distinguish timetable-backed courses from metadata-only entries
    - [x] Events: add `date_from` / `date_to` range filters
    - [x] Events: add weekday-based filters derived from `event_date`
    - [x] Events: support time-overlap filters (e.g. all events active at `10:15`) instead of only start-after / end-before bounds

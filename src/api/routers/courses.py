@@ -8,7 +8,7 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
-from database.model import Course, Module
+from database.model import Course, CourseEvent, Module
 
 
 class CourseRead(BaseModel):
@@ -44,6 +44,7 @@ def get_courses(
     type: list[str] | None = Query(None, description="Course type values (repeatable; case-insensitive, partial match; OR within this filter), e.g. \"Vorlesung\", \"Seminar\"."),
     language: list[str] | None = Query(None, description="Course language values (repeatable; case-insensitive, partial match; OR within this filter)."),
     staff: list[str] | None = Query(None, description="Course staff values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    has_events: bool | None = Query(None, description="Filter by whether a course has at least one event (true) or no events (false)."),
     weekly_hours_min: int | None = Query(None, description="Minimum weekly hours for the course"),
     weekly_hours_max: int | None = Query(None, description="Maximum weekly hours for the course"),
     module_id: list[int] | None = Query(None, description="Module IDs the course belongs to (repeatable; direct match; OR within this filter)."),
@@ -70,6 +71,9 @@ def get_courses(
         query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if staff:
         query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
+    if has_events is not None:
+        events_exist = select(CourseEvent.id).where(CourseEvent.course_id == Course.id).exists()
+        query = query.where(events_exist if has_events else ~events_exist)
     if weekly_hours_min is not None:
         query = query.where(Course.weekly_hours >= weekly_hours_min)
     if weekly_hours_max is not None:
