@@ -23,12 +23,17 @@ tags:
   - name: Modules
   - name: Courses
   - name: Events
+  - name: Staff
+  - name: Locations
+  - name: Degrees
+  - name: Semesters
   - name: Rooms
   - name: Schedule
   - name: Catalog
   - name: Ingestion
   - name: Exports
   - name: Search
+  - name: Compatibility
 paths:
   /api/v2/modules:
     get:
@@ -47,6 +52,15 @@ paths:
         - $ref: '#/components/parameters/DegreeProgram'
         - $ref: '#/components/parameters/UpdatedSince'
         - $ref: '#/components/parameters/UpdatedUntil'
+        - name: id
+          in: query
+          description: Direct filter by module IDs. Repeatable OR filter.
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
         - name: name
           in: query
           description: Case-insensitive partial match on module name. Repeatable OR filter.
@@ -130,6 +144,18 @@ paths:
           description: Filter by whether at least one event exists under any course of the module.
           schema:
             type: boolean
+        - name: recommended_study_semester_gte
+          in: query
+          description: Minimum recommended study semester extracted from path metadata.
+          schema:
+            type: integer
+            minimum: 1
+        - name: recommended_study_semester_lte
+          in: query
+          description: Maximum recommended study semester extracted from path metadata.
+          schema:
+            type: integer
+            minimum: 1
         - $ref: '#/components/parameters/ModuleInclude'
         - $ref: '#/components/parameters/ModuleFields'
         - $ref: '#/components/parameters/ModuleSort'
@@ -366,6 +392,15 @@ paths:
         - $ref: '#/components/parameters/DegreeProgram'
         - $ref: '#/components/parameters/UpdatedSince'
         - $ref: '#/components/parameters/UpdatedUntil'
+        - name: id
+          in: query
+          description: Direct filter by course IDs. Repeatable OR filter.
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
         - name: name
           in: query
           schema:
@@ -488,6 +523,11 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: has_online_events
+          in: query
+          description: Filter courses that have at least one online event.
+          schema:
+            type: boolean
         - $ref: '#/components/parameters/CourseInclude'
         - $ref: '#/components/parameters/CourseFields'
         - $ref: '#/components/parameters/CourseSort'
@@ -665,6 +705,15 @@ paths:
         - $ref: '#/components/parameters/DegreeProgram'
         - $ref: '#/components/parameters/UpdatedSince'
         - $ref: '#/components/parameters/UpdatedUntil'
+        - name: id
+          in: query
+          description: Direct filter by event IDs. Repeatable OR filter.
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
         - $ref: '#/components/parameters/EventDate'
         - $ref: '#/components/parameters/EventDateFrom'
         - $ref: '#/components/parameters/EventDateTo'
@@ -715,6 +764,34 @@ paths:
           description: Include only online/remote events inferred from location metadata.
           schema:
             type: boolean
+        - name: is_online
+          in: query
+          description: Explicit online status filter. When set, supersedes `online_only` semantics.
+          schema:
+            type: boolean
+        - name: is_canceled
+          in: query
+          description: Filter by cancellation status.
+          schema:
+            type: boolean
+        - name: recurrence_key
+          in: query
+          description: Repeatable OR filter for recurrence groups.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: exclude_id
+          in: query
+          description: Exclude known event IDs from the result set.
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
         - name: course_id
           in: query
           schema:
@@ -1018,6 +1095,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/SearchResponse'
 
+  /api/v2/search/suggest:
+    get:
+      tags: [Search]
+      summary: Autocomplete suggestions for search boxes
+      description: |
+        Lightweight endpoint for GUI typeahead fields.
+        Returns ranked label/value suggestions across selected resource types.
+      operationId: suggestSearch
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: types
+          in: query
+          description: Resource types to include in suggestions.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [module, course, event, room, faculty, degree_program]
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/SemesterId'
+        - $ref: '#/components/parameters/FacultyId'
+        - $ref: '#/components/parameters/DegreeProgram'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Ranked suggestion list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestResponse'
+
   /api/v2/catalog/faculties:
     get:
       tags: [Catalog]
@@ -1202,6 +1322,99 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v2/schedule/free-slots:
+    get:
+      tags: [Schedule]
+      summary: Find available schedule slots for a date
+      description: |
+        Returns free time windows for planner UIs based on the filtered event set.
+        Useful for "find a gap" interactions and drag-to-schedule assistants.
+      operationId: getScheduleFreeSlots
+      parameters:
+        - $ref: '#/components/parameters/EventDate'
+        - $ref: '#/components/parameters/SemesterId'
+        - $ref: '#/components/parameters/FacultyId'
+        - $ref: '#/components/parameters/DegreeProgram'
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+        - name: course_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+        - name: day_start
+          in: query
+          schema:
+            type: string
+            format: time
+            default: '08:00:00'
+        - name: day_end
+          in: query
+          schema:
+            type: string
+            format: time
+            default: '20:00:00'
+        - name: slot_minutes
+          in: query
+          description: Optional snapping granularity for GUI slot rendering.
+          schema:
+            type: integer
+            minimum: 5
+            maximum: 240
+            default: 30
+        - name: min_duration_minutes
+          in: query
+          schema:
+            type: integer
+            minimum: 5
+            maximum: 720
+            default: 30
+        - name: exclude_online
+          in: query
+          description: Ignore online-only events when computing occupancy.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Available windows for the requested scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FreeSlotListResponse'
+
+  /api/v2/schedule/conflicts:
+    post:
+      tags: [Schedule]
+      summary: Detect overlapping events
+      description: |
+        Computes collisions in a filtered event set for conflict badges and planner warnings.
+      operationId: detectScheduleConflicts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleConflictRequest'
+      responses:
+        '200':
+          description: Conflict groups with overlap details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleConflictResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v2/changes:
     get:
       tags: [Search]
@@ -1347,6 +1560,550 @@ paths:
                 $ref: '#/components/schemas/IngestionRunLogsResponse'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /api/modules:
+    get:
+      tags: [Modules, Compatibility]
+      summary: Legacy compatibility list modules
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyListModules
+      parameters:
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: module_number
+          in: query
+          schema:
+            type: string
+        - name: language
+          in: query
+          schema:
+            type: string
+        - name: planung
+          in: query
+          schema:
+            type: string
+        - name: credits_min
+          in: query
+          schema:
+            type: integer
+        - name: credits_max
+          in: query
+          schema:
+            type: integer
+        - name: degree_id
+          in: query
+          schema:
+            type: integer
+        - name: semester
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Legacy module list response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/ModuleWithRelationshipsResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/ModuleResponse'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/modules/{module_id}:
+    get:
+      tags: [Modules, Compatibility]
+      summary: Legacy compatibility get module by ID
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyGetModule
+      parameters:
+        - name: module_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Legacy module detail response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ModuleDetailResponse'
+                  - $ref: '#/components/schemas/ModuleResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/events:
+    get:
+      tags: [Events, Compatibility]
+      summary: Legacy compatibility list events
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyListEvents
+      parameters:
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: title
+          in: query
+          schema:
+            type: string
+        - name: weekday
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/Weekday'
+          style: form
+          explode: true
+        - name: type
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/EventType'
+          style: form
+          explode: true
+        - name: status
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/Status'
+          style: form
+          explode: true
+        - name: location_id
+          in: query
+          schema:
+            type: integer
+        - name: start_time_min
+          in: query
+          schema:
+            type: string
+            format: time
+        - name: start_time_max
+          in: query
+          schema:
+            type: string
+            format: time
+        - name: end_time_min
+          in: query
+          schema:
+            type: string
+            format: time
+        - name: end_time_max
+          in: query
+          schema:
+            type: string
+            format: time
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+        - name: staff_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+        - name: degree_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+        - name: semester
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Legacy event list response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/EventWithRelationshipsResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/EventResponse'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/events/{event_id}:
+    get:
+      tags: [Events, Compatibility]
+      summary: Legacy compatibility get event by ID
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyGetEvent
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Legacy event detail response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/EventDetailResponse'
+                  - $ref: '#/components/schemas/EventResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/staff:
+    get:
+      tags: [Staff, Compatibility]
+      summary: Legacy compatibility list staff
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyListStaff
+      parameters:
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: event_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Legacy staff list response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/StaffWithRelationshipsResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/StaffResponse'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/staff/{staff_id}:
+    get:
+      tags: [Staff, Compatibility]
+      summary: Legacy compatibility get staff member by ID
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyGetStaff
+      parameters:
+        - name: staff_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Legacy staff detail response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/StaffDetailResponse'
+                  - $ref: '#/components/schemas/StaffResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/locations:
+    get:
+      tags: [Locations, Compatibility]
+      summary: Legacy compatibility list locations
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyListLocations
+      parameters:
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Legacy location list response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/LocationWithRelationshipsResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/LocationResponse'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/locations/{location_id}:
+    get:
+      tags: [Locations, Compatibility]
+      summary: Legacy compatibility get location by ID
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyGetLocation
+      parameters:
+        - name: location_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Legacy location detail response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LocationDetailResponse'
+                  - $ref: '#/components/schemas/LocationResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/degrees:
+    get:
+      tags: [Degrees, Compatibility]
+      summary: Legacy compatibility list degrees
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyListDegrees
+      parameters:
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: include_semesters
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: module_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Legacy degree list response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/DegreeWithRelationshipsResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/DegreeResponse'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/degrees/{degree_id}:
+    get:
+      tags: [Degrees, Compatibility]
+      summary: Legacy compatibility get degree by ID
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyGetDegree
+      parameters:
+        - name: degree_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: include_relationships
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: include_semesters
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Legacy degree detail response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DegreeDetailResponse'
+                  - $ref: '#/components/schemas/DegreeResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/semesters:
+    get:
+      tags: [Semesters, Compatibility]
+      summary: Legacy compatibility list semesters
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyListSemesters
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Legacy semester list response.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SemesterResponse'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /api/semesters/{semester_id}:
+    get:
+      tags: [Semesters, Compatibility]
+      summary: Legacy compatibility get semester by ID
+      description: Deprecated compatibility endpoint for Uni Planer API clients.
+      deprecated: true
+      operationId: legacyGetSemester
+      parameters:
+        - name: semester_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Legacy semester detail response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemesterResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 
 components:
   parameters:
@@ -2243,6 +3000,10 @@ components:
       properties:
         q:
           type: string
+        id:
+          type: array
+          items:
+            type: integer
         semester_id:
           type: string
         faculty_id:
@@ -2291,6 +3052,12 @@ components:
           type: boolean
         has_events:
           type: boolean
+        recommended_study_semester_gte:
+          type: integer
+          minimum: 1
+        recommended_study_semester_lte:
+          type: integer
+          minimum: 1
         goals_contains:
           type: string
         content_contains:
@@ -2305,6 +3072,10 @@ components:
       properties:
         q:
           type: string
+        id:
+          type: array
+          items:
+            type: integer
         semester_id:
           type: string
         faculty_id:
@@ -2375,12 +3146,18 @@ components:
           type: integer
         study_semester_lte:
           type: integer
+        has_online_events:
+          type: boolean
 
     EventFilter:
       type: object
       properties:
         q:
           type: string
+        id:
+          type: array
+          items:
+            type: integer
         semester_id:
           type: string
         faculty_id:
@@ -2435,6 +3212,18 @@ components:
           type: boolean
         online_only:
           type: boolean
+        is_online:
+          type: boolean
+        is_canceled:
+          type: boolean
+        recurrence_key:
+          type: array
+          items:
+            type: string
+        exclude_id:
+          type: array
+          items:
+            type: integer
         course_id:
           type: array
           items:
@@ -2696,6 +3485,409 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SearchResult'
+
+    SuggestItem:
+      type: object
+      required: [resource_type, id, label]
+      properties:
+        resource_type:
+          type: string
+          enum: [module, course, event, room, faculty, degree_program]
+        id:
+          type: string
+        label:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        score:
+          type: number
+        matched_fields:
+          type: array
+          items:
+            type: string
+
+    SuggestResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestItem'
+
+    ConflictPair:
+      type: object
+      required: [left, right, overlap_minutes]
+      properties:
+        left:
+          $ref: '#/components/schemas/EventSummary'
+        right:
+          $ref: '#/components/schemas/EventSummary'
+        overlap_minutes:
+          type: integer
+          minimum: 1
+
+    ConflictGroup:
+      type: object
+      required: [key, conflicts]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+          nullable: true
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictPair'
+
+    ScheduleConflictRequest:
+      type: object
+      required: [filter]
+      properties:
+        filter:
+          $ref: '#/components/schemas/EventFilter'
+        group_by:
+          type: string
+          enum: [none, room, staff, course, module]
+          default: room
+        min_overlap_minutes:
+          type: integer
+          minimum: 1
+          default: 1
+        include_touching:
+          type: boolean
+          default: false
+
+    ScheduleConflictResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictGroup'
+
+    FreeSlot:
+      type: object
+      required: [date, start_time, end_time, duration_minutes]
+      properties:
+        date:
+          type: string
+          format: date
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+        duration_minutes:
+          type: integer
+          minimum: 1
+        room:
+          type: string
+          nullable: true
+        building:
+          type: string
+          nullable: true
+        reasons:
+          type: array
+          items:
+            type: string
+
+    FreeSlotListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FreeSlot'
+
+    Weekday:
+      type: integer
+      enum: [1, 2, 3, 4, 5, 6, 7]
+
+    EventType:
+      type: string
+
+    Status:
+      type: string
+      enum: [ok, pok, tok, alt, reserve]
+
+    ValidationError:
+      type: object
+      required: [loc, msg, type]
+      properties:
+        loc:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+        type:
+          type: string
+        input:
+          oneOf:
+            - type: string
+            - type: number
+            - type: integer
+            - type: boolean
+            - type: object
+            - type: array
+            - type: 'null'
+        ctx:
+          type: object
+          additionalProperties: true
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    ModuleResponse:
+      type: object
+      required: [id, name, module_number, credits, planung, language]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        module_number:
+          type: string
+        credits:
+          type: integer
+        planung:
+          type: string
+        language:
+          type: string
+
+    ModuleWithRelationshipsResponse:
+      allOf:
+        - $ref: '#/components/schemas/ModuleResponse'
+        - type: object
+          properties:
+            degree_ids:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: integer
+            event_ids:
+              type: array
+              items:
+                type: integer
+
+    DegreeInModuleResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        semesters:
+          type: array
+          items:
+            type: integer
+        note:
+          type: string
+          nullable: true
+
+    ModuleDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/ModuleResponse'
+        - type: object
+          properties:
+            degrees:
+              type: array
+              items:
+                $ref: '#/components/schemas/DegreeInModuleResponse'
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/EventResponse'
+
+    EventResponse:
+      type: object
+      required: [id, type, title, weekday, start_time, end_time, location_id, status]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        type:
+          $ref: '#/components/schemas/EventType'
+        title:
+          type: string
+        weekday:
+          $ref: '#/components/schemas/Weekday'
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+        location_id:
+          type: integer
+        status:
+          $ref: '#/components/schemas/Status'
+
+    EventWithRelationshipsResponse:
+      allOf:
+        - $ref: '#/components/schemas/EventResponse'
+        - type: object
+          properties:
+            module_ids:
+              type: array
+              items:
+                type: integer
+            staff_ids:
+              type: array
+              items:
+                type: integer
+
+    EventDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/EventResponse'
+        - type: object
+          properties:
+            module:
+              type: array
+              items:
+                $ref: '#/components/schemas/ModuleResponse'
+            staff:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffResponse'
+
+    StaffResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+
+    StaffWithRelationshipsResponse:
+      allOf:
+        - $ref: '#/components/schemas/StaffResponse'
+        - type: object
+          properties:
+            event_ids:
+              type: array
+              items:
+                type: integer
+
+    StaffDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/StaffResponse'
+        - type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/EventResponse'
+
+    LocationResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+
+    LocationWithRelationshipsResponse:
+      allOf:
+        - $ref: '#/components/schemas/LocationResponse'
+        - type: object
+          properties:
+            event_ids:
+              type: array
+              items:
+                type: integer
+
+    LocationDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/LocationResponse'
+        - type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/EventResponse'
+
+    DegreeResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+
+    DegreeWithRelationshipsResponse:
+      allOf:
+        - $ref: '#/components/schemas/DegreeResponse'
+        - type: object
+          properties:
+            module_ids:
+              type: array
+              items:
+                type: integer
+            semesters:
+              type: array
+              items:
+                type: integer
+
+    ModuleInDegreeResponse:
+      allOf:
+        - $ref: '#/components/schemas/ModuleResponse'
+        - type: object
+          properties:
+            semesters:
+              type: array
+              items:
+                type: integer
+            note:
+              type: string
+              nullable: true
+
+    DegreeDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/DegreeResponse'
+        - type: object
+          properties:
+            modules:
+              type: array
+              items:
+                $ref: '#/components/schemas/ModuleInDegreeResponse'
+            semesters:
+              type: array
+              items:
+                type: integer
+
+    SemesterResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
 
     Problem:
       type: object
