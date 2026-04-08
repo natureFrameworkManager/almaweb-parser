@@ -1,8 +1,10 @@
 from collections import defaultdict
 from enum import Enum
-from typing import Any
+from typing import Any, Sequence
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, or_
 from sqlmodel import select
@@ -36,6 +38,44 @@ router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 
 
+def _attach_course_relations(
+    session: SessionDep,
+    courses: Sequence[Course],
+    items: list[dict[str, Any]],
+    include_children: bool,
+    include_parent: bool,
+) -> list[dict[str, Any]]:
+    if not courses or (not include_children and not include_parent):
+        return items
+
+    course_ids = [course.id for course in courses if course.id is not None]
+    module_ids = [course.module_id for course in courses]
+
+    modules_by_id: dict[int, Module] = {}
+    if include_parent and module_ids:
+        modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
+        modules_by_id = {module.id: module for module in modules if module.id is not None}
+
+    events_by_course_id: dict[int, list[CourseEvent]] = defaultdict(list)
+    if include_children and course_ids:
+        events = session.exec(select(CourseEvent).where(CourseEvent.course_id.in_(course_ids))).all() # type: ignore
+        for event in events:
+            events_by_course_id[event.course_id].append(event)
+
+    for course, item in zip(courses, items):
+        if include_parent:
+            parent_module = modules_by_id.get(course.module_id)
+            item["module"] = parent_module.model_dump() if parent_module else None
+        if include_children:
+            course_id = course.id
+            item["events"] = [
+                event.model_dump()
+                for event in (events_by_course_id.get(course_id, []) if course_id is not None else [])
+            ]
+
+    return items
+
+
 @router.get("", summary="List all Courses")
 def get_courses(
     session: SessionDep,
@@ -52,6 +92,8 @@ def get_courses(
     module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
     page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
     limit: int | None = Query(None, ge=1, description="Number of courses returned per page. If omitted together with page, pagination is disabled."),
+    include_children: bool = Query(False, description="Include child data: events for each course."),
+    include_parent: bool = Query(False, description="Include linked parent data: the module for each course."),
     fields: list[CourseField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
@@ -105,6 +147,8 @@ def get_courses(
     else:
         courses = session.exec(query.distinct()).all()
 
+    include_related = include_children or include_parent
+
     if fields:
         requested_fields = {
             field.strip()
@@ -126,18 +170,45 @@ def get_courses(
             )
 
         selected_fields = sorted(requested_fields)
+        items = [
+            {
+                field: course.model_dump().get(field)
+                for field in selected_fields
+            }
+            for course in courses
+        ]
+        if include_related:
+            items = _attach_course_relations(
+                session,
+                courses,
+                items,
+                include_children=include_children,
+                include_parent=include_parent,
+            )
+
         return {
             "count": total_count,
             "page": response_page,
             "limit": response_limit,
             "total_pages": total_pages,
-            "items": [
-                {
-                    field: course.model_dump().get(field)
-                    for field in selected_fields
-                }
-                for course in courses
-            ],
+            "items": items,
+        }
+
+    if include_related:
+        items = [course.model_dump() for course in courses]
+        items = _attach_course_relations(
+            session,
+            courses,
+            items,
+            include_children=include_children,
+            include_parent=include_parent,
+        )
+        return {
+            "count": total_count,
+            "page": response_page,
+            "limit": response_limit,
+            "total_pages": total_pages,
+            "items": items,
         }
 
     return {
@@ -153,6 +224,8 @@ def get_courses(
 def get_course(
     course_id: int,
     session: SessionDep,
+    include_children: bool = Query(False, description="Include child data: events for this course."),
+    include_parent: bool = Query(False, description="Include linked parent data: the module for this course."),
     fields: list[CourseField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """
@@ -163,6 +236,8 @@ def get_course(
     course = session.get(Course, course_id)
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
+
+    include_related = include_children or include_parent
 
     if fields:
         requested_fields = {
@@ -185,9 +260,29 @@ def get_course(
             )
 
         selected_fields = sorted(requested_fields)
-        return {
+        item = {
             field: course.model_dump().get(field)
             for field in selected_fields
         }
+        if include_related:
+            item = _attach_course_relations(
+                session,
+                [course],
+                [item],
+                include_children=include_children,
+                include_parent=include_parent,
+            )[0]
+        return item
+
+    if include_related:
+        item = course.model_dump()
+        item = _attach_course_relations(
+            session,
+            [course],
+            [item],
+            include_children=include_children,
+            include_parent=include_parent,
+        )[0]
+        return JSONResponse(content=jsonable_encoder(item))
 
     return course

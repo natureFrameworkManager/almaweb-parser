@@ -1,8 +1,10 @@
 from collections import defaultdict
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Sequence
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlmodel import select
@@ -36,6 +38,41 @@ class EventListResponse(BaseModel):
 
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
+
+
+def _attach_event_relations(
+    session: SessionDep,
+    events: Sequence[CourseEvent],
+    items: list[dict[str, Any]],
+    include_parent: bool,
+) -> list[dict[str, Any]]:
+    if not events or not include_parent:
+        return items
+
+    course_ids = [event.course_id for event in events]
+    courses = session.exec(select(Course).where(Course.id.in_(course_ids))).all() # type: ignore
+    courses_by_id = {course.id: course for course in courses if course.id is not None}
+
+    module_ids = [course.module_id for course in courses]
+    modules_by_id: dict[int, Module] = {}
+    if module_ids:
+        modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
+        modules_by_id = {module.id: module for module in modules if module.id is not None}
+
+    for event, item in zip(events, items):
+        parent_course = courses_by_id.get(event.course_id)
+        parent_module = modules_by_id.get(parent_course.module_id) if parent_course else None
+        item["course"] = (
+            {
+                **parent_course.model_dump(),
+                "module": parent_module.model_dump() if parent_module else None,
+            }
+            if parent_course
+            else None
+        )
+        item["module"] = parent_module.model_dump() if parent_module else None
+
+    return items
 
 def parse_iso_date(value: str, param_name: str) -> date:
     try:
@@ -74,6 +111,7 @@ def get_events(
     module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
     page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
     limit: int | None = Query(None, ge=1, description="Number of events returned per page. If omitted together with page, pagination is disabled."),
+    include_parent: bool = Query(False, description="Include linked parent data: course and module for each event."),
     fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
@@ -137,6 +175,8 @@ def get_events(
     else:
         events = session.exec(query.distinct()).all()
 
+    include_related = include_parent  # Events have no children, so include_children has no effect here.
+
     if fields:
         requested_fields = {
             field.strip()
@@ -158,18 +198,33 @@ def get_events(
             )
 
         selected_fields = sorted(requested_fields)
+        items = [
+            {
+                field: event.model_dump().get(field)
+                for field in selected_fields
+            }
+            for event in events
+        ]
+        if include_related:
+            items = _attach_event_relations(session, events, items, include_parent=include_parent)
+
         return {
             "count": total_count,
             "page": response_page,
             "limit": response_limit,
             "total_pages": total_pages,
-            "items": [
-                {
-                    field: event.model_dump().get(field)
-                    for field in selected_fields
-                }
-                for event in events
-            ],
+            "items": items,
+        }
+
+    if include_related:
+        items = [event.model_dump() for event in events]
+        items = _attach_event_relations(session, events, items, include_parent=include_parent)
+        return {
+            "count": total_count,
+            "page": response_page,
+            "limit": response_limit,
+            "total_pages": total_pages,
+            "items": items,
         }
 
     return {
@@ -185,6 +240,7 @@ def get_events(
 def get_event(
     event_id: int,
     session: SessionDep,
+    include_parent: bool = Query(False, description="Include linked parent data: course and module for this event."),
     fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """
@@ -195,6 +251,8 @@ def get_event(
     event = session.get(CourseEvent, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
+
+    include_related = include_parent  # Events have no children, so include_children has no effect here.
 
     if fields:
         requested_fields = {
@@ -217,9 +275,17 @@ def get_event(
             )
 
         selected_fields = sorted(requested_fields)
-        return {
+        item = {
             field: event.model_dump().get(field)
             for field in selected_fields
         }
+        if include_related:
+            item = _attach_event_relations(session, [event], [item], include_parent=include_parent)[0]
+        return item
+
+    if include_related:
+        item = event.model_dump()
+        item = _attach_event_relations(session, [event], [item], include_parent=include_parent)[0]
+        return JSONResponse(content=jsonable_encoder(item))
 
     return event
