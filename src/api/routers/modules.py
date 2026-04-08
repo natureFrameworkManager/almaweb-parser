@@ -45,6 +45,14 @@ def get_modules(
     session: SessionDep,
     name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    responsible_person: str | None = Query(None, description="Responsible person (case-insensitive, partial match)."),
+    start_semester: str | None = Query(None, description="Start semester (case-insensitive, partial match)."),
+    frequency: str | None = Query(None, description="Frequency (case-insensitive, partial match)."),
+    goals: str | None = Query(None, description="Goals text (case-insensitive, partial match)."),
+    content: str | None = Query(None, description="Content text (case-insensitive, partial match)."),
+    exam_prerequisites: str | None = Query(None, description="Exam prerequisites text (case-insensitive, partial match)."),
+    duration_semesters_min: int | None = Query(None, description="Minimum duration in semesters."),
+    duration_semesters_max: int | None = Query(None, description="Maximum duration in semesters."),
     credits_min: int | None = Query(None, description="Minimum credits for the module"),
     credits_max: int | None = Query(None, description="Maximum credits for the module"),
     path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Matches on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
@@ -63,6 +71,22 @@ def get_modules(
         query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in name])) # type: ignore
     if module_number:
         query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in module_number])) # type: ignore
+    if responsible_person:
+        query = query.where(Module.responsible_person.ilike(f"%{responsible_person}%")) # type: ignore
+    if start_semester:
+        query = query.where(Module.start_semester.ilike(f"%{start_semester}%")) # type: ignore
+    if frequency:
+        query = query.where(Module.frequency.ilike(f"%{frequency}%")) # type: ignore
+    if goals:
+        query = query.where(Module.goals.ilike(f"%{goals}%")) # type: ignore
+    if content:
+        query = query.where(Module.content.ilike(f"%{content}%")) # type: ignore
+    if exam_prerequisites:
+        query = query.where(Module.exam_prerequisites.ilike(f"%{exam_prerequisites}%")) # type: ignore
+    if duration_semesters_min is not None:
+        query = query.where(Module.duration_semesters >= duration_semesters_min)
+    if duration_semesters_max is not None:
+        query = query.where(Module.duration_semesters <= duration_semesters_max)
     if credits_min is not None:
         query = query.where(Module.credits >= credits_min)
     if credits_max is not None:

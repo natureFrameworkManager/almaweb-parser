@@ -55,9 +55,9 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
 - [x] Add optional paging and limiting
 - [ ] Add more filters and fields to the single entity endpoints
 - [ ] Add more filters
-   - [ ] Modules: filter by `responsible_person`, `start_semester`, and `frequency`
-   - [ ] Modules: add `duration_semesters_min` / `duration_semesters_max`
-   - [ ] Modules: support searching `goals`, `content`, and `exam_prerequisites` text blocks
+   - [x] Modules: filter by `responsible_person`, `start_semester`, and `frequency`
+   - [x] Modules: add `duration_semesters_min` / `duration_semesters_max`
+   - [x] Modules: support searching `goals`, `content`, and `exam_prerequisites` text blocks
    - [ ] Modules: support filtering by specific `path` segments or exact path prefixes instead of only free-text path search
    - [ ] Courses: filter by exact staff members within the parsed `staff` list
    - [x] Courses: allow multi-value filters for `type`, `language`, and `module_id`
