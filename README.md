@@ -55,6 +55,20 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
 - [ ] Add optional paging and limiting
 - [ ] Add more filters and fields to the single entity endpoints
 - [ ] Add more filters
+   - [ ] Modules: filter by `responsible_person`, `start_semester`, and `frequency`
+   - [ ] Modules: add `duration_semesters_min` / `duration_semesters_max`
+   - [ ] Modules: support searching `goals`, `content`, and `exam_prerequisites` text blocks
+   - [ ] Modules: support filtering by specific `path` segments or exact path prefixes instead of only free-text path search
+   - [ ] Courses: filter by exact staff members within the parsed `staff` list
+   - [ ] Courses: allow multi-value filters for `type`, `language`, and `module_id`
+   - [ ] Courses: add a `has_events` filter to distinguish timetable-backed courses from metadata-only entries
+   - [ ] Events: add `date_from` / `date_to` range filters
+   - [ ] Events: add weekday-based filters derived from `event_date`
+   - [ ] Events: support time-overlap filters (e.g. all events active at `10:15`) instead of only start-after / end-before bounds
+   - [ ] Events: filter by exact staff members within the parsed event `staff` list
+   - [ ] Events: add normalized location filters to distinguish building, room, and free-text notes
 - [ ] Possibly handle courses of multiple modules and introduce a many-to-many relationship where necessary
 - [ ] Parse degree and semester information from the path or other points
 - [ ] Make the endpoints compatible with the [planer app](https://github.com/natureFrameworkManager/planer) 
+- [ ] Normalize the events to a single week pattern and time slot format by collapsing the dates
+- [ ] Optimize the datastorage as the events for one semester are over 57k entries
