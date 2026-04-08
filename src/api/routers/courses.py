@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
@@ -39,16 +39,16 @@ CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 @router.get("", summary="List all Courses")
 def get_courses(
     session: SessionDep,
-    name: str | None = Query(None, description="Course name (case-insensitive, partial match)"),
-    number: str | None = Query(None, description="Course number (case-insensitive, partial match)"),
-    type: str | None = Query(None, description="Course type (case-insensitive, partial match), (e.g. \"Vorlesung\", \"Seminar\", etc.)"),
-    language: str | None = Query(None, description="Course language (case-insensitive, partial match)"),
-    staff: str | None = Query(None, description="Course staff (case-insensitive, partial match)."),
+    name: list[str] | None = Query(None, description="Course name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    number: list[str] | None = Query(None, description="Course number values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    type: list[str] | None = Query(None, description="Course type values (repeatable; case-insensitive, partial match; OR within this filter), e.g. \"Vorlesung\", \"Seminar\"."),
+    language: list[str] | None = Query(None, description="Course language values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff: list[str] | None = Query(None, description="Course staff values (repeatable; case-insensitive, partial match; OR within this filter)."),
     weekly_hours_min: int | None = Query(None, description="Minimum weekly hours for the course"),
     weekly_hours_max: int | None = Query(None, description="Maximum weekly hours for the course"),
-    module_id: int | None = Query(None, description="ID of the module the course belongs to"),
-    module_name: str | None = Query(None, description="Name of the module the course belongs to (case-insensitive, partial match)"),
-    module_number: str | None = Query(None, description="Number of the module the course belongs to (case-insensitive, partial match)"),
+    module_id: list[int] | None = Query(None, description="Module IDs the course belongs to (repeatable; direct match; OR within this filter)."),
+    module_name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
     page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
     limit: int | None = Query(None, ge=1, description="Number of courses returned per page. If omitted together with page, pagination is disabled."),
     fields: list[CourseField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
@@ -61,25 +61,27 @@ def get_courses(
 
     # Apply filters based on query parameters
     if name:
-        query = query.where(Course.name.ilike(f"%{name}%")) # type: ignore
+        query = query.where(or_(*[Course.name.ilike(f"%{value}%") for value in name])) # type: ignore
     if number:
-        query = query.where(Course.number.ilike(f"%{number}%")) # type: ignore
+        query = query.where(or_(*[Course.number.ilike(f"%{value}%") for value in number])) # type: ignore
     if type:
-        query = query.where(Course.type.ilike(f"%{type}%")) # type: ignore
+        query = query.where(or_(*[Course.type.ilike(f"%{value}%") for value in type])) # type: ignore
     if language:
-        query = query.where(Course.language.ilike(f"%{language}%")) # type: ignore
+        query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if staff:
-        query = query.where(Course.staff.ilike(f"%{staff}%")) # type: ignore
+        query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
     if weekly_hours_min is not None:
         query = query.where(Course.weekly_hours >= weekly_hours_min)
     if weekly_hours_max is not None:
         query = query.where(Course.weekly_hours <= weekly_hours_max)
-    if module_id is not None:
-        query = query.where(Course.module_id == module_id)
-    if module_name:
-        query = query.join(Course.module).where(Module.name.ilike(f"%{module_name}%")) # type: ignore
-    if module_number:
-        query = query.join(Course.module).where(Module.number.ilike(f"%{module_number}%")) # type: ignore
+    if module_id:
+        query = query.where(Course.module_id.in_(module_id)) # type: ignore
+    if module_name or module_number:
+        query = query.join(Course.module) # type: ignore
+        if module_name:
+            query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in module_name])) # type: ignore
+        if module_number:
+            query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in module_number])) # type: ignore
 
     # Count all filtered rows before pagination.
     count_query = select(func.count()).select_from(query.distinct().subquery())
