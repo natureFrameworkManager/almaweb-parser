@@ -45,12 +45,12 @@ def get_modules(
     session: SessionDep,
     name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
-    responsible_person: str | None = Query(None, description="Responsible person (case-insensitive, partial match)."),
-    start_semester: str | None = Query(None, description="Start semester (case-insensitive, partial match)."),
-    frequency: str | None = Query(None, description="Frequency (case-insensitive, partial match)."),
-    goals: str | None = Query(None, description="Goals text (case-insensitive, partial match)."),
-    content: str | None = Query(None, description="Content text (case-insensitive, partial match)."),
-    exam_prerequisites: str | None = Query(None, description="Exam prerequisites text (case-insensitive, partial match)."),
+    responsible_person: list[str] | None = Query(None, description="Responsible person values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    start_semester: list[str] | None = Query(None, description="Start semester values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    frequency: list[str] | None = Query(None, description="Frequency values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    goals: list[str] | None = Query(None, description="Goals text values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    content: list[str] | None = Query(None, description="Content text values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    exam_prerequisites: list[str] | None = Query(None, description="Exam prerequisites text values (repeatable; case-insensitive, partial match; OR within this filter)."),
     duration_semesters_min: int | None = Query(None, description="Minimum duration in semesters."),
     duration_semesters_max: int | None = Query(None, description="Maximum duration in semesters."),
     credits_min: int | None = Query(None, description="Minimum credits for the module"),
@@ -72,17 +72,17 @@ def get_modules(
     if module_number:
         query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in module_number])) # type: ignore
     if responsible_person:
-        query = query.where(Module.responsible_person.ilike(f"%{responsible_person}%")) # type: ignore
+        query = query.where(or_(*[Module.responsible_person.ilike(f"%{value}%") for value in responsible_person])) # type: ignore
     if start_semester:
-        query = query.where(Module.start_semester.ilike(f"%{start_semester}%")) # type: ignore
+        query = query.where(or_(*[Module.start_semester.ilike(f"%{value}%") for value in start_semester])) # type: ignore
     if frequency:
-        query = query.where(Module.frequency.ilike(f"%{frequency}%")) # type: ignore
+        query = query.where(or_(*[Module.frequency.ilike(f"%{value}%") for value in frequency])) # type: ignore
     if goals:
-        query = query.where(Module.goals.ilike(f"%{goals}%")) # type: ignore
+        query = query.where(or_(*[Module.goals.ilike(f"%{value}%") for value in goals])) # type: ignore
     if content:
-        query = query.where(Module.content.ilike(f"%{content}%")) # type: ignore
+        query = query.where(or_(*[Module.content.ilike(f"%{value}%") for value in content])) # type: ignore
     if exam_prerequisites:
-        query = query.where(Module.exam_prerequisites.ilike(f"%{exam_prerequisites}%")) # type: ignore
+        query = query.where(or_(*[Module.exam_prerequisites.ilike(f"%{value}%") for value in exam_prerequisites])) # type: ignore
     if duration_semesters_min is not None:
         query = query.where(Module.duration_semesters >= duration_semesters_min)
     if duration_semesters_max is not None:
