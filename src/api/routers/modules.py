@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
@@ -43,8 +43,8 @@ ModuleField = Enum("ModuleField", {f: f for f in Module.model_fields})
 @router.get("", summary="List all modules")
 def get_modules(
     session: SessionDep,
-    name: str | None = Query(None, description="Module name (case-insensitive, partial match)"),
-    module_number: str | None = Query(None, description="Module number (case-insensitive, partial match)"),
+    name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
     credits_min: int | None = Query(None, description="Minimum credits for the module"),
     credits_max: int | None = Query(None, description="Maximum credits for the module"),
     path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Matches on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
@@ -60,9 +60,9 @@ def get_modules(
 
     # Apply filters based on query parameters
     if name:
-        query = query.where(Module.name.ilike(f"%{name}%")) # type: ignore
+        query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in name])) # type: ignore
     if module_number:
-        query = query.where(Module.number.ilike(f"%{module_number}%")) # type: ignore
+        query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in module_number])) # type: ignore
     if credits_min is not None:
         query = query.where(Module.credits >= credits_min)
     if credits_max is not None:

@@ -50,7 +50,7 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
 - [ ] Containerize the application with Docker for easier deployment.
 - [ ] Add tests
 - [ ] Parse room data, which is linked from each event entry inside AlmaWeb
-- [ ] Add filters for multiple modules or courses at once (e.g. `?module_id=123&module_id=456`)
+- [x] Add filters for multiple modules or courses at once (e.g. `?module_id=123&module_id=456`)
 - [ ] Add a `last_updated` timestamp to each datapoint
 - [x] Add optional paging and limiting
 - [ ] Add more filters and fields to the single entity endpoints
