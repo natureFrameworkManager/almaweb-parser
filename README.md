@@ -41,7 +41,7 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
 
 ## Future Ideas
 
-- [ ] Implement the `path_search` filter on `/api/modules` (the parameter exists but is not yet applied to the query).
+- [x] Implement the `path_search` filter on `/api/modules` (the parameter exists but is not yet applied to the query).
 - [ ] Support crawling multiple faculties or semesters in a single run and differentiating them in the database.
 - [ ] Add a periodic re-crawl mechanism that updates existing records rather than requiring a full re-run.
 - [ ] Add a `/api/modules/{id}/ical` shortcut to export the timetable of a single module directly.

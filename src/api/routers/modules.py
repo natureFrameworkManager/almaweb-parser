@@ -68,8 +68,21 @@ def get_modules(
     if credits_max is not None:
         query = query.where(Module.credits <= credits_max)
     if path_search:
-        # TODO: Substring match on the joinded path array. Path is joined with " > ", so we can search for "Informatik > Softwaretechnik" to match modules in that path.
-        query = query
+        # Normalize/Join JSON array like ["A","B"] into "A > B" for path substring search.
+        normalized_path = func.replace(
+            func.replace(
+                func.replace(
+                    func.replace(func.json_extract(Module.path, "$"), "[", ""),
+                    "]",
+                    "",
+                ),
+                '"',
+                "",
+            ),
+            ",",
+            " > ",
+        )
+        query = query.where(func.lower(normalized_path).ilike(f"%{path_search.lower()}%"))
 
     # Count all filtered rows before pagination.
     count_query = select(func.count()).select_from(query.distinct().subquery())
@@ -89,7 +102,6 @@ def get_modules(
     else:
         modules = session.exec(query.distinct()).all()
 
-    print(f"fields: {fields}")
     if fields:
         requested_fields = {
             field.strip()
