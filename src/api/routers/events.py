@@ -1,6 +1,6 @@
 from collections import defaultdict
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
@@ -37,12 +37,33 @@ class EventListResponse(BaseModel):
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
 
+def parse_iso_date(value: str, param_name: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {param_name} format. Expected YYYY-MM-DD.") from exc
+
+
+def parse_hhmm_time(value: str, param_name: str) -> time:
+    match = re.match(r"^(\d{2}):(\d{2})$", value)
+    if not match:
+        raise HTTPException(status_code=400, detail=f"Invalid {param_name} format. Expected HH:MM.")
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    if hours > 23 or minutes > 59:
+        raise HTTPException(status_code=400, detail=f"Invalid {param_name} format. Expected HH:MM.")
+    return time(hours, minutes)
+
 @router.get("", summary="List all Events")
 def get_events(
     session: SessionDep,
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
+    date_from: str | None = Query(None, description="Start date for range filtering (YYYY-MM-DD, inclusive)"),
+    date_to: str | None = Query(None, description="End date for range filtering (YYYY-MM-DD, inclusive)"),
+    weekday: list[Annotated[int, Query(ge=0, le=6)]] | None = Query(None, description="Filter by weekday values. (0=Sunday, 1=Monday, ..., 6=Saturday)"),
     start_time: str | None = Query(None, description="Event start time (HH:MM)"),
     end_time: str | None = Query(None, description="Event end time (HH:MM)"),
+    time_overlap: str | None = Query(None, description="Return events active at this time (HH:MM), i.e. start_time <= value <= end_time."),
     location: str | None = Query(None, description="Event location (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
@@ -63,19 +84,24 @@ def get_events(
 
     # Apply filters based on query parameters
     if date:
-        query = query.where(CourseEvent.event_date == date)
+        query = query.where(CourseEvent.event_date == parse_iso_date(date, "date"))
+    if date_from:
+        query = query.where(CourseEvent.event_date >= parse_iso_date(date_from, "date_from"))
+    if date_to:
+        query = query.where(CourseEvent.event_date <= parse_iso_date(date_to, "date_to"))
+    if weekday:
+        sqlite_weekdays = [str((day + 1) % 7) for day in weekday]
+        query = query.where(func.strftime("%w", CourseEvent.event_date).in_(sqlite_weekdays))
     if start_time:
-        start_time_match = re.match(r"^(\d{2}):(\d{2})$", start_time)
-        if not start_time_match:
-            raise HTTPException(status_code=400, detail="Invalid start_time format. Expected HH:MM.")
-        parsed_start_time = time(int(start_time_match.group(1)), int(start_time_match.group(2)))
+        parsed_start_time = parse_hhmm_time(start_time, "start_time")
         query = query.where(CourseEvent.start_time >= parsed_start_time)
     if end_time:
-        end_time_match = re.match(r"^(\d{2}):(\d{2})$", end_time)
-        if not end_time_match:
-            raise HTTPException(status_code=400, detail="Invalid end_time format. Expected HH:MM.")
-        parsed_end_time = time(int(end_time_match.group(1)), int(end_time_match.group(2)))
+        parsed_end_time = parse_hhmm_time(end_time, "end_time")
         query = query.where(CourseEvent.end_time <= parsed_end_time)
+    if time_overlap:
+        parsed_overlap_time = parse_hhmm_time(time_overlap, "time_overlap")
+        query = query.where(CourseEvent.start_time <= parsed_overlap_time)
+        query = query.where(CourseEvent.end_time >= parsed_overlap_time)
     if location:
         query = query.where(CourseEvent.location.ilike(f"%{location}%")) # type: ignore
     if course_id is not None:
