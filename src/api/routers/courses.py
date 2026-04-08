@@ -1,8 +1,10 @@
 from collections import defaultdict
 from enum import Enum
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func
 from sqlmodel import select
 
 from database.database import SessionDep
@@ -22,11 +24,19 @@ class CourseRead(BaseModel):
     module_id: int | None = None
 
 
+class CourseListResponse(BaseModel):
+    count: int
+    page: int
+    limit: int | None
+    total_pages: int | None
+    items: list[CourseRead | dict[str, Any]]
+
+
 router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
 
 
-@router.get("", summary="List all Courses", response_model=list[CourseRead])
+@router.get("", summary="List all Courses")
 def get_courses(
     session: SessionDep,
     name: str | None = Query(None, description="Course name (case-insensitive, partial match)"),
@@ -39,6 +49,8 @@ def get_courses(
     module_id: int | None = Query(None, description="ID of the module the course belongs to"),
     module_name: str | None = Query(None, description="Name of the module the course belongs to (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Number of the module the course belongs to (case-insensitive, partial match)"),
+    page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
+    limit: int | None = Query(None, ge=1, description="Number of courses returned per page. If omitted together with page, pagination is disabled."),
     fields: list[CourseField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
@@ -69,8 +81,23 @@ def get_courses(
     if module_number:
         query = query.join(Course.module).where(Module.number.ilike(f"%{module_number}%")) # type: ignore
 
-    # Fetch distinct courses (join filters can produce duplicates)
-    courses = session.exec(query.distinct()).all()
+    # Count all filtered rows before pagination.
+    count_query = select(func.count()).select_from(query.distinct().subquery())
+    total_count = session.exec(count_query).one()
+
+    pagination_enabled = page is not None or limit is not None
+    total_pages: int | None = None
+    response_page: int = 1
+    response_limit: int | None = None
+
+    if pagination_enabled:
+        response_page = page if page is not None else 1
+        response_limit = limit if limit is not None else 50
+        offset = (response_page - 1) * response_limit
+        courses = session.exec(query.distinct().offset(offset).limit(response_limit)).all()
+        total_pages = (total_count + response_limit - 1) // response_limit if total_count > 0 else 0
+    else:
+        courses = session.exec(query.distinct()).all()
 
     if fields:
         requested_fields = {
@@ -93,15 +120,27 @@ def get_courses(
             )
 
         selected_fields = sorted(requested_fields)
-        return [
-            {
-                field: course.model_dump().get(field)
-                for field in selected_fields
-            }
-            for course in courses
-        ]
+        return {
+            "count": total_count,
+            "page": response_page,
+            "limit": response_limit,
+            "total_pages": total_pages,
+            "items": [
+                {
+                    field: course.model_dump().get(field)
+                    for field in selected_fields
+                }
+                for course in courses
+            ],
+        }
 
-    return courses
+    return {
+        "count": total_count,
+        "page": response_page,
+        "limit": response_limit,
+        "total_pages": total_pages,
+        "items": courses,
+    }
 
 
 @router.get("/{course_id}", summary="Get a course by ID", response_model=CourseRead)

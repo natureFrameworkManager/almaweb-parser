@@ -1,7 +1,9 @@
 from enum import Enum
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func
 from sqlmodel import select
 
 from database.database import SessionDep
@@ -26,11 +28,19 @@ class ModuleRead(BaseModel):
     prerequisites: dict[str, str] | None = None
 
 
+class ModuleListResponse(BaseModel):
+    count: int
+    page: int | None
+    limit: int | None
+    total_pages: int | None
+    items: list[ModuleRead | dict[str, Any]]
+
+
 router = APIRouter(prefix="/modules", tags=["Modules"])
 ModuleField = Enum("ModuleField", {f: f for f in Module.model_fields})
 
 
-@router.get("", summary="List all modules", response_model=list[ModuleRead])
+@router.get("", summary="List all modules")
 def get_modules(
     session: SessionDep,
     name: str | None = Query(None, description="Module name (case-insensitive, partial match)"),
@@ -38,6 +48,8 @@ def get_modules(
     credits_min: int | None = Query(None, description="Minimum credits for the module"),
     credits_max: int | None = Query(None, description="Maximum credits for the module"),
     path_search: str | None = Query(None, description="Filter modules by path (case-insensitive, partial match). Matches on the joined path string, which is the path array joined with ' > '. For example, searching for 'Informatik > Softwaretechnik' will match modules in that path."),
+    page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
+    limit: int | None = Query(None, ge=1, description="Number of modules returned per page. If omitted together with page, pagination is disabled."),
     fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
@@ -59,9 +71,25 @@ def get_modules(
         # TODO: Substring match on the joinded path array. Path is joined with " > ", so we can search for "Informatik > Softwaretechnik" to match modules in that path.
         query = query
 
-    # Fetch distinct modules (join filters can produce duplicates)
-    modules = session.exec(query.distinct()).all()
+    # Count all filtered rows before pagination.
+    count_query = select(func.count()).select_from(query.distinct().subquery())
+    total_count = session.exec(count_query).one()
 
+    pagination_enabled = page is not None or limit is not None
+    total_pages: int | None = None
+    response_page: int = 1
+    response_limit: int | None = None
+
+    if pagination_enabled:
+        response_page = page if page is not None else 1
+        response_limit = limit if limit is not None else 50
+        offset = (response_page - 1) * response_limit
+        modules = session.exec(query.distinct().offset(offset).limit(response_limit)).all()
+        total_pages = (total_count + response_limit - 1) // response_limit if total_count > 0 else 0
+    else:
+        modules = session.exec(query.distinct()).all()
+
+    print(f"fields: {fields}")
     if fields:
         requested_fields = {
             field.strip()
@@ -83,15 +111,27 @@ def get_modules(
             )
 
         selected_fields = sorted(requested_fields)
-        return [
-            {
-                field: module.model_dump().get(field)
-                for field in selected_fields
-            }
-            for module in modules
-        ]
+        return {
+            "count": total_count,
+            "page": response_page,
+            "limit": response_limit,
+            "total_pages": total_pages,
+            "items": [
+                {
+                    field: module.model_dump().get(field)
+                    for field in selected_fields
+                }
+                for module in modules
+            ],
+        }
 
-    return modules
+    return {
+        "count": total_count,
+        "page": response_page,
+        "limit": response_limit,
+        "total_pages": total_pages,
+        "items": modules,
+    }
 
 
 @router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleRead)

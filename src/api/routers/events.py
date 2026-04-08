@@ -1,8 +1,10 @@
 from collections import defaultdict
 from enum import Enum
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func
 from sqlmodel import select
 from datetime import date, time
 import re
@@ -24,10 +26,18 @@ class CourseEventRead(BaseModel):
     staff: list[str] | None = None
 
 
+class EventListResponse(BaseModel):
+    count: int
+    page: int
+    limit: int | None
+    total_pages: int | None
+    items: list[CourseEventRead | dict[str, Any]]
+
+
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
 
-@router.get("", summary="List all Events", response_model=list[CourseEventRead])
+@router.get("", summary="List all Events")
 def get_events(
     session: SessionDep,
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
@@ -41,6 +51,8 @@ def get_events(
     module_id: int | None = Query(None, description="ID of the module the event belongs to"),
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
+    page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
+    limit: int | None = Query(None, ge=1, description="Number of events returned per page. If omitted together with page, pagination is disabled."),
     fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
@@ -81,8 +93,23 @@ def get_events(
     if module_number:
         query = query.join(Course).join(Module).where(Module.number.ilike(f"%{module_number}%")) # type: ignore
 
-    # Fetch distinct events (join filters can produce duplicates)
-    events = session.exec(query.distinct()).all()
+    # Count all filtered rows before pagination.
+    count_query = select(func.count()).select_from(query.distinct().subquery())
+    total_count = session.exec(count_query).one()
+
+    pagination_enabled = page is not None or limit is not None
+    total_pages: int | None = None
+    response_page: int = 1
+    response_limit: int | None = None
+
+    if pagination_enabled:
+        response_page = page if page is not None else 1
+        response_limit = limit if limit is not None else 50
+        offset = (response_page - 1) * response_limit
+        events = session.exec(query.distinct().offset(offset).limit(response_limit)).all()
+        total_pages = (total_count + response_limit - 1) // response_limit if total_count > 0 else 0
+    else:
+        events = session.exec(query.distinct()).all()
 
     if fields:
         requested_fields = {
@@ -105,15 +132,27 @@ def get_events(
             )
 
         selected_fields = sorted(requested_fields)
-        return [
-            {
-                field: event.model_dump().get(field)
-                for field in selected_fields
-            }
-            for event in events
-        ]
+        return {
+            "count": total_count,
+            "page": response_page,
+            "limit": response_limit,
+            "total_pages": total_pages,
+            "items": [
+                {
+                    field: event.model_dump().get(field)
+                    for field in selected_fields
+                }
+                for event in events
+            ],
+        }
 
-    return events
+    return {
+        "count": total_count,
+        "page": response_page,
+        "limit": response_limit,
+        "total_pages": total_pages,
+        "items": events,
+    }
 
 
 @router.get("/{event_id}", summary="Get an event by ID", response_model=CourseEventRead)
