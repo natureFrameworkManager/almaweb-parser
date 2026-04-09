@@ -1,0 +1,3461 @@
+openapi: 3.1.0
+info:
+  title: AlmaWeb API
+  version: 4.0.0-proposal
+  summary: Data-model-aligned API with full filter, export, and admin support
+  description: |
+    ## Overview
+
+    Version 4 aligns endpoint design directly with the canonical data models
+    (Modules, Courses, Events, Staff, Locations, Buildings, Degrees, Faculties,
+    Semesters, Event types, Status) and adds the features described in the
+    openapi.md outline:
+
+    - **Uniform filter model** — every collection supports the same set of
+      cross-cutting filters (id, name, number, type, relationships, date ranges,
+      boolean presence flags).
+    - **Pagination, sorting, field selection** on every collection endpoint.
+    - **Distinct field endpoints** (`/distinct/{field}`) on every collection.
+    - **Changes endpoint** per resource and globally under `/admin/changes`.
+    - **Export** via query-parameter (`?format=ical|csv|json`) or `Accept` header
+      on every collection *and* single-item endpoint.
+    - **Related-entity sub-endpoints** (`/{resource}/{id}/{child}`).
+    - **Weekly schedule view** (`/weekly`).
+    - **Admin endpoints** — health, stats, changes, sync.
+    - **RFC 9457 Problem Details** for all error responses.
+
+  contact:
+    name: AlmaWeb Parser Maintainers
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: Modules
+    description: University modules (Lehrveranstaltungen).
+  - name: Courses
+    description: Schedulable course units within modules.
+  - name: Events
+    description: Concrete timetable occurrences of courses.
+  - name: Staff
+    description: Teaching staff.
+  - name: Locations
+    description: Rooms and lecture halls.
+  - name: Buildings
+    description: Physical buildings that contain locations.
+  - name: Degrees
+    description: Degree programs.
+  - name: Faculties
+    description: Faculties / departments.
+  - name: Semesters
+    description: Academic semesters.
+  - name: Catalog
+    description: Reference data — event types, status values.
+  - name: Schedule
+    description: Weekly timetable view.
+  - name: Exports
+    description: Bulk data exports.
+  - name: Admin
+    description: Ingestion / sync, health, stats, changes.
+
+# ===========================================================================
+# PATHS
+# ===========================================================================
+paths:
+
+  # =========================================================================
+  # MODULES
+  # =========================================================================
+  /api/v4/modules:
+    get:
+      tags: [Modules]
+      summary: List modules
+      operationId: listModules
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          description: Partial case-insensitive match on module name. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: number
+          in: query
+          description: Partial match on module number. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: language
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: frequency
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: credits_min
+          in: query
+          schema: { type: number }
+        - name: credits_max
+          in: query
+          schema: { type: number }
+        - name: duration_semesters_min
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: duration_semesters_max
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: degree_id
+          in: query
+          description: Filter by degree program. Repeatable OR.
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: faculty_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: semester_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: staff_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: course_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: has_courses
+          in: query
+          schema: { type: boolean }
+        - name: has_events
+          in: query
+          schema: { type: boolean }
+        - name: has_staff
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/ModuleInclude'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/ModuleSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Paginated module list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleListResponse'
+            text/csv:
+              schema: { type: string }
+            text/calendar:
+              schema: { type: string, format: binary }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/modules/distinct/{field}:
+    get:
+      tags: [Modules]
+      summary: Distinct values for a module field
+      operationId: getModuleDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, number, language, frequency, credits, duration_semesters, degree_id, faculty_id, semester_id]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/modules/changes:
+    get:
+      tags: [Modules]
+      summary: Module changes in a timestamp range
+      operationId: getModuleChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed modules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/modules/{module_id}:
+    get:
+      tags: [Modules]
+      summary: Get module by ID
+      operationId: getModule
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+        - $ref: '#/components/parameters/ModuleInclude'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Module details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleDetail'
+            text/csv:
+              schema: { type: string }
+            text/calendar:
+              schema: { type: string, format: binary }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/modules/{module_id}/courses:
+    get:
+      tags: [Modules]
+      summary: Courses for a module
+      operationId: listCoursesForModule
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+        - $ref: '#/components/parameters/CourseInclude'
+        - $ref: '#/components/parameters/CourseSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Courses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseListResponse'
+            text/csv:
+              schema: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/modules/{module_id}/events:
+    get:
+      tags: [Modules]
+      summary: Events for a module (flattened across all courses)
+      operationId: listEventsForModule
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/EventWeekday'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/modules/{module_id}/staff:
+    get:
+      tags: [Modules]
+      summary: Staff for a module
+      operationId: listStaffForModule
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Staff members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/modules/{module_id}/degrees:
+    get:
+      tags: [Modules]
+      summary: Degree programs linked to a module
+      operationId: listDegreesForModule
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+      responses:
+        '200':
+          description: Degree programs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DegreeListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # COURSES
+  # =========================================================================
+  /api/v4/courses:
+    get:
+      tags: [Courses]
+      summary: List courses
+      operationId: listCourses
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: number
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: type
+          in: query
+          description: Course type. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: language
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: status_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: weekly_hours_min
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: weekly_hours_max
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: event_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: staff_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: faculty_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: semester_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: has_events
+          in: query
+          schema: { type: boolean }
+        - name: has_staff
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/CourseInclude'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/CourseSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Paginated course list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseListResponse'
+            text/csv:
+              schema: { type: string }
+            text/calendar:
+              schema: { type: string, format: binary }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/courses/distinct/{field}:
+    get:
+      tags: [Courses]
+      summary: Distinct values for a course field
+      operationId: getCourseDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, number, type, language, status_id, weekly_hours, module_id, staff_id]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/courses/changes:
+    get:
+      tags: [Courses]
+      summary: Course changes in a timestamp range
+      operationId: getCourseChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed courses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/courses/{course_id}:
+    get:
+      tags: [Courses]
+      summary: Get course by ID
+      operationId: getCourse
+      parameters:
+        - $ref: '#/components/parameters/CourseId'
+        - $ref: '#/components/parameters/CourseInclude'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Course details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseDetail'
+            text/csv:
+              schema: { type: string }
+            text/calendar:
+              schema: { type: string, format: binary }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/courses/{course_id}/events:
+    get:
+      tags: [Courses]
+      summary: Events for a course
+      operationId: listEventsForCourse
+      parameters:
+        - $ref: '#/components/parameters/CourseId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/EventWeekday'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/courses/{course_id}/staff:
+    get:
+      tags: [Courses]
+      summary: Staff for a course
+      operationId: listStaffForCourse
+      parameters:
+        - $ref: '#/components/parameters/CourseId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Staff members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/courses/{course_id}/module:
+    get:
+      tags: [Courses]
+      summary: Parent module for a course
+      operationId: getCourseModule
+      parameters:
+        - $ref: '#/components/parameters/CourseId'
+      responses:
+        '200':
+          description: Parent module.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # EVENTS
+  # =========================================================================
+  /api/v4/events:
+    get:
+      tags: [Events]
+      summary: List events
+      operationId: listEvents
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: number
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: type_id
+          in: query
+          description: Event type ID. Repeatable OR.
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/EventWeekday'
+        - name: start_time_from
+          in: query
+          schema: { type: string, format: time }
+        - name: start_time_to
+          in: query
+          schema: { type: string, format: time }
+        - name: end_time_from
+          in: query
+          schema: { type: string, format: time }
+        - name: end_time_to
+          in: query
+          schema: { type: string, format: time }
+        - name: location_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: building
+          in: query
+          description: Partial match on building name. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: course_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: staff_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: faculty_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: semester_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Paginated event list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/events/today:
+    get:
+      tags: [Events]
+      summary: Today's events
+      operationId: listEventsToday
+      parameters:
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events occurring today.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  /api/v4/events/tomorrow:
+    get:
+      tags: [Events]
+      summary: Tomorrow's events
+      operationId: listEventsTomorrow
+      parameters:
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events occurring tomorrow.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  /api/v4/events/week:
+    get:
+      tags: [Events]
+      summary: Events for the current week
+      operationId: listEventsThisWeek
+      parameters:
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events in the current calendar week.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  /api/v4/events/day/{date}:
+    get:
+      tags: [Events]
+      summary: Events for a specific day
+      operationId: listEventsForDay
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events on the given date.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  /api/v4/events/week/{date}:
+    get:
+      tags: [Events]
+      summary: Events for the calendar week containing the given date
+      operationId: listEventsForWeek
+      parameters:
+        - name: date
+          in: path
+          required: true
+          description: Any date within the desired ISO calendar week (YYYY-MM-DD).
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events in the calendar week.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  /api/v4/events/month/{date}:
+    get:
+      tags: [Events]
+      summary: Events for the month containing the given date
+      operationId: listEventsForMonth
+      parameters:
+        - name: date
+          in: path
+          required: true
+          description: Any date within the desired month (YYYY-MM-DD).
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events in the month.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  /api/v4/events/distinct/{field}:
+    get:
+      tags: [Events]
+      summary: Distinct values for an event field
+      operationId: getEventDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, number, type_id, weekday, location_id, building, course_id, staff_id, module_id]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/events/changes:
+    get:
+      tags: [Events]
+      summary: Event changes in a timestamp range
+      operationId: getEventChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/events/{event_id}:
+    get:
+      tags: [Events]
+      summary: Get event by ID
+      operationId: getEvent
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/EventInclude'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Event details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetail'
+            text/calendar:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/events/{event_id}/course:
+    get:
+      tags: [Events]
+      summary: Parent course for an event
+      operationId: getEventCourse
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Parent course.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/events/{event_id}/staff:
+    get:
+      tags: [Events]
+      summary: Staff for an event
+      operationId: listStaffForEvent
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Staff members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/events/{event_id}/location:
+    get:
+      tags: [Events]
+      summary: Location for an event
+      operationId: getEventLocation
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Location.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # STAFF
+  # =========================================================================
+  /api/v4/staff:
+    get:
+      tags: [Staff]
+      summary: List staff
+      operationId: listStaff
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: department
+          in: query
+          description: Partial match on department. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: type
+          in: query
+          description: Staff role/type. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: course_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: event_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: faculty_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: has_courses
+          in: query
+          schema: { type: boolean }
+        - name: has_events
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/StaffSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Paginated staff list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffListResponse'
+            text/csv:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/staff/distinct/{field}:
+    get:
+      tags: [Staff]
+      summary: Distinct values for a staff field
+      operationId: getStaffDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, department, type]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/staff/{staff_id}:
+    get:
+      tags: [Staff]
+      summary: Get staff member by ID
+      operationId: getStaffMember
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+        - $ref: '#/components/parameters/Fields'
+      responses:
+        '200':
+          description: Staff details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/staff/{staff_id}/courses:
+    get:
+      tags: [Staff]
+      summary: Courses for a staff member
+      operationId: listCoursesForStaff
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+        - $ref: '#/components/parameters/CourseSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Courses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/staff/{staff_id}/events:
+    get:
+      tags: [Staff]
+      summary: Events for a staff member
+      operationId: listEventsForStaff
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/EventWeekday'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/staff/{staff_id}/modules:
+    get:
+      tags: [Staff]
+      summary: Modules for a staff member
+      operationId: listModulesForStaff
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Modules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/staff/changes:
+    get:
+      tags: [Staff]
+      summary: Staff changes in a timestamp range
+      operationId: getStaffChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed staff members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  # =========================================================================
+  # LOCATIONS
+  # =========================================================================
+  /api/v4/locations:
+    get:
+      tags: [Locations]
+      summary: List locations
+      operationId: listLocations
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: type
+          in: query
+          description: Location type. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: building
+          in: query
+          description: Partial match on building name. Repeatable OR.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: building_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: seats_min
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: seats_max
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: size_min
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: size_max
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: accessibility
+          in: query
+          schema: { type: boolean }
+        - name: event_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: has_events
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/LocationSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Paginated location list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationListResponse'
+            text/csv:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/locations/distinct/{field}:
+    get:
+      tags: [Locations]
+      summary: Distinct values for a location field
+      operationId: getLocationDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, type, building_id, seats, accessibility]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/locations/changes:
+    get:
+      tags: [Locations]
+      summary: Location changes in a timestamp range
+      operationId: getLocationChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed locations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/locations/{location_id}:
+    get:
+      tags: [Locations]
+      summary: Get location by ID
+      operationId: getLocation
+      parameters:
+        - $ref: '#/components/parameters/LocationId'
+        - $ref: '#/components/parameters/Fields'
+      responses:
+        '200':
+          description: Location details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/locations/{location_id}/events:
+    get:
+      tags: [Locations]
+      summary: Events at a location
+      operationId: listEventsForLocation
+      parameters:
+        - $ref: '#/components/parameters/LocationId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/EventWeekday'
+        - $ref: '#/components/parameters/EventSort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/locations/{location_id}/building:
+    get:
+      tags: [Locations]
+      summary: Building for a location
+      operationId: getLocationBuilding
+      parameters:
+        - $ref: '#/components/parameters/LocationId'
+      responses:
+        '200':
+          description: Building.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Building'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # BUILDINGS
+  # =========================================================================
+  /api/v4/buildings:
+    get:
+      tags: [Buildings]
+      summary: List buildings
+      operationId: listBuildings
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: short
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Building list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildingListResponse'
+            text/csv:
+              schema: { type: string }
+
+  /api/v4/buildings/distinct/{field}:
+    get:
+      tags: [Buildings]
+      summary: Distinct values for a building field
+      operationId: getBuildingDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, short]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/buildings/changes:
+    get:
+      tags: [Buildings]
+      summary: Building changes in a timestamp range
+      operationId: getBuildingChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed buildings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/buildings/{building_id}:
+    get:
+      tags: [Buildings]
+      summary: Get building by ID
+      operationId: getBuilding
+      parameters:
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Building details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Building'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/buildings/{building_id}/locations:
+    get:
+      tags: [Buildings]
+      summary: Locations in a building
+      operationId: listLocationsForBuilding
+      parameters:
+        - $ref: '#/components/parameters/BuildingId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Locations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # CATALOG — SEMESTERS
+  # =========================================================================
+  /api/v4/catalog/semesters:
+    get:
+      tags: [Catalog, Semesters]
+      summary: List semesters
+      operationId: listSemesters
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: term
+          in: query
+          description: Repeatable OR. Common values — WS, SS, WiSe, SoSe.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: year_min
+          in: query
+          schema: { type: integer }
+        - name: year_max
+          in: query
+          schema: { type: integer }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Semester list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemesterListResponse'
+
+  /api/v4/catalog/semesters/distinct/{field}:
+    get:
+      tags: [Catalog, Semesters]
+      summary: Distinct values for a semester field
+      operationId: getSemesterDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, term, year]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/catalog/semesters/changes:
+    get:
+      tags: [Catalog, Semesters]
+      summary: Semester changes in a timestamp range
+      operationId: getSemesterChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed semesters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/catalog/semesters/{semester_id}:
+    get:
+      tags: [Catalog, Semesters]
+      summary: Get semester by ID
+      operationId: getSemester
+      parameters:
+        - name: semester_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Semester.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Semester'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # CATALOG — DEGREES
+  # =========================================================================
+  /api/v4/catalog/degrees:
+    get:
+      tags: [Catalog, Degrees]
+      summary: List degree programs
+      operationId: listDegrees
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: faculty_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Degree list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DegreeListResponse'
+
+  /api/v4/catalog/degrees/distinct/{field}:
+    get:
+      tags: [Catalog, Degrees]
+      summary: Distinct values for a degree field
+      operationId: getDegreeDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, faculty_id]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/catalog/degrees/changes:
+    get:
+      tags: [Catalog, Degrees]
+      summary: Degree changes in a timestamp range
+      operationId: getDegreeChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed degrees.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/catalog/degrees/{degree_id}:
+    get:
+      tags: [Catalog, Degrees]
+      summary: Get degree by ID
+      operationId: getDegree
+      parameters:
+        - name: degree_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Degree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Degree'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/catalog/degrees/{degree_id}/modules:
+    get:
+      tags: [Catalog, Degrees]
+      summary: Modules for a degree program
+      operationId: listModulesForDegree
+      parameters:
+        - name: degree_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Modules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # CATALOG — FACULTIES
+  # =========================================================================
+  /api/v4/catalog/faculties:
+    get:
+      tags: [Catalog, Faculties]
+      summary: List faculties
+      operationId: listFaculties
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - name: name
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
+        - name: prefix
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: degree_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Faculty list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacultyListResponse'
+
+  /api/v4/catalog/faculties/distinct/{field}:
+    get:
+      tags: [Catalog, Faculties]
+      summary: Distinct values for a faculty field
+      operationId: getFacultyDistinctField
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [name, prefix]
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/IncludeCounts'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Distinct field values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistinctValuesResponse'
+
+  /api/v4/catalog/faculties/changes:
+    get:
+      tags: [Catalog, Faculties]
+      summary: Faculty changes in a timestamp range
+      operationId: getFacultyChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed faculties.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/catalog/faculties/{faculty_id}:
+    get:
+      tags: [Catalog, Faculties]
+      summary: Get faculty by ID
+      operationId: getFaculty
+      parameters:
+        - name: faculty_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Faculty.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Faculty'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/catalog/faculties/{faculty_id}/degrees:
+    get:
+      tags: [Catalog, Faculties]
+      summary: Degrees for a faculty
+      operationId: listDegreesForFaculty
+      parameters:
+        - name: faculty_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Degrees.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DegreeListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/catalog/faculties/{faculty_id}/modules:
+    get:
+      tags: [Catalog, Faculties]
+      summary: Modules for a faculty
+      operationId: listModulesForFaculty
+      parameters:
+        - name: faculty_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Modules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # CATALOG — EVENT TYPES & STATUS
+  # =========================================================================
+  /api/v4/catalog/event-types:
+    get:
+      tags: [Catalog]
+      summary: List event types
+      operationId: listEventTypes
+      responses:
+        '200':
+          description: Event type list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeListResponse'
+
+  /api/v4/catalog/event-types/{event_type_id}:
+    get:
+      tags: [Catalog]
+      summary: Get event type by ID
+      operationId: getEventType
+      parameters:
+        - name: event_type_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Event type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/catalog/statuses:
+    get:
+      tags: [Catalog]
+      summary: List course status values
+      operationId: listStatuses
+      responses:
+        '200':
+          description: Status list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListResponse'
+
+  /api/v4/catalog/statuses/{status_id}:
+    get:
+      tags: [Catalog]
+      summary: Get status by ID
+      operationId: getStatus
+      parameters:
+        - name: status_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # EXPORTS
+  # =========================================================================
+  /api/v4/exports/ical:
+    get:
+      tags: [Exports]
+      summary: Export matching data as iCalendar
+      description: |
+        Exports matching records to iCalendar. By default this endpoint exports
+        events; related entities can be included in title/location/description
+        formatting.
+      operationId: exportIcalV4
+      parameters:
+        - $ref: '#/components/parameters/ExportEntity'
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/ExportName'
+        - $ref: '#/components/parameters/ExportNumber'
+        - $ref: '#/components/parameters/ExportType'
+        - $ref: '#/components/parameters/ExportBuilding'
+        - $ref: '#/components/parameters/ExportDepartment'
+        - $ref: '#/components/parameters/ExportModuleId'
+        - $ref: '#/components/parameters/ExportCourseId'
+        - $ref: '#/components/parameters/ExportEventId'
+        - $ref: '#/components/parameters/ExportStaffId'
+        - $ref: '#/components/parameters/ExportLocationId'
+        - $ref: '#/components/parameters/ExportDegreeId'
+        - $ref: '#/components/parameters/ExportFacultyId'
+        - $ref: '#/components/parameters/ExportSemesterId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/ExportWeekdayStart'
+        - $ref: '#/components/parameters/ExportWeekdayEnd'
+        - $ref: '#/components/parameters/ExportStartTimeFrom'
+        - $ref: '#/components/parameters/ExportStartTimeTo'
+        - $ref: '#/components/parameters/ExportEndTimeFrom'
+        - $ref: '#/components/parameters/ExportEndTimeTo'
+        - $ref: '#/components/parameters/ExportCreditsMin'
+        - $ref: '#/components/parameters/ExportCreditsMax'
+        - $ref: '#/components/parameters/ExportYearStart'
+        - $ref: '#/components/parameters/ExportYearEnd'
+        - $ref: '#/components/parameters/ExportHasCourses'
+        - $ref: '#/components/parameters/ExportHasEvents'
+        - $ref: '#/components/parameters/ExportHasStaff'
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/ExportSortBy'
+        - $ref: '#/components/parameters/ExportSortOrder'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/IcalTitleFormat'
+        - $ref: '#/components/parameters/IcalLocationFormat'
+        - $ref: '#/components/parameters/IcalDescriptionFormat'
+        - $ref: '#/components/parameters/IcalIncludeCourseInfo'
+        - $ref: '#/components/parameters/IcalIncludeEventInfo'
+        - $ref: '#/components/parameters/IcalIncludeStaffInfo'
+        - $ref: '#/components/parameters/IcalIncludeRelationshipInfo'
+      responses:
+        '200':
+          description: iCalendar export.
+          content:
+            text/calendar:
+              schema: { type: string, format: binary }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/exports/csv:
+    get:
+      tags: [Exports]
+      summary: Export matching data as CSV
+      operationId: exportCsvV4
+      parameters:
+        - $ref: '#/components/parameters/ExportEntity'
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/ExportName'
+        - $ref: '#/components/parameters/ExportNumber'
+        - $ref: '#/components/parameters/ExportType'
+        - $ref: '#/components/parameters/ExportBuilding'
+        - $ref: '#/components/parameters/ExportDepartment'
+        - $ref: '#/components/parameters/ExportModuleId'
+        - $ref: '#/components/parameters/ExportCourseId'
+        - $ref: '#/components/parameters/ExportEventId'
+        - $ref: '#/components/parameters/ExportStaffId'
+        - $ref: '#/components/parameters/ExportLocationId'
+        - $ref: '#/components/parameters/ExportDegreeId'
+        - $ref: '#/components/parameters/ExportFacultyId'
+        - $ref: '#/components/parameters/ExportSemesterId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/ExportWeekdayStart'
+        - $ref: '#/components/parameters/ExportWeekdayEnd'
+        - $ref: '#/components/parameters/ExportStartTimeFrom'
+        - $ref: '#/components/parameters/ExportStartTimeTo'
+        - $ref: '#/components/parameters/ExportEndTimeFrom'
+        - $ref: '#/components/parameters/ExportEndTimeTo'
+        - $ref: '#/components/parameters/ExportCreditsMin'
+        - $ref: '#/components/parameters/ExportCreditsMax'
+        - $ref: '#/components/parameters/ExportYearStart'
+        - $ref: '#/components/parameters/ExportYearEnd'
+        - $ref: '#/components/parameters/ExportHasCourses'
+        - $ref: '#/components/parameters/ExportHasEvents'
+        - $ref: '#/components/parameters/ExportHasStaff'
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/ExportSortBy'
+        - $ref: '#/components/parameters/ExportSortOrder'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: CSV export.
+          content:
+            text/csv:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/exports/json:
+    get:
+      tags: [Exports]
+      summary: Export matching data as JSON
+      operationId: exportJsonV4
+      parameters:
+        - $ref: '#/components/parameters/ExportEntity'
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/ExportName'
+        - $ref: '#/components/parameters/ExportNumber'
+        - $ref: '#/components/parameters/ExportType'
+        - $ref: '#/components/parameters/ExportBuilding'
+        - $ref: '#/components/parameters/ExportDepartment'
+        - $ref: '#/components/parameters/ExportModuleId'
+        - $ref: '#/components/parameters/ExportCourseId'
+        - $ref: '#/components/parameters/ExportEventId'
+        - $ref: '#/components/parameters/ExportStaffId'
+        - $ref: '#/components/parameters/ExportLocationId'
+        - $ref: '#/components/parameters/ExportDegreeId'
+        - $ref: '#/components/parameters/ExportFacultyId'
+        - $ref: '#/components/parameters/ExportSemesterId'
+        - $ref: '#/components/parameters/EventDateFrom'
+        - $ref: '#/components/parameters/EventDateTo'
+        - $ref: '#/components/parameters/ExportWeekdayStart'
+        - $ref: '#/components/parameters/ExportWeekdayEnd'
+        - $ref: '#/components/parameters/ExportStartTimeFrom'
+        - $ref: '#/components/parameters/ExportStartTimeTo'
+        - $ref: '#/components/parameters/ExportEndTimeFrom'
+        - $ref: '#/components/parameters/ExportEndTimeTo'
+        - $ref: '#/components/parameters/ExportCreditsMin'
+        - $ref: '#/components/parameters/ExportCreditsMax'
+        - $ref: '#/components/parameters/ExportYearStart'
+        - $ref: '#/components/parameters/ExportYearEnd'
+        - $ref: '#/components/parameters/ExportHasCourses'
+        - $ref: '#/components/parameters/ExportHasEvents'
+        - $ref: '#/components/parameters/ExportHasStaff'
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/UpdatedUntil'
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/ExportSortBy'
+        - $ref: '#/components/parameters/ExportSortOrder'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: JSON export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJsonResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # =========================================================================
+  # WEEKLY SCHEDULE
+  # =========================================================================
+  /api/v4/weekly:
+    get:
+      tags: [Schedule]
+      summary: Generic weekly timetable (Monday–Sunday)
+      description: |
+        Combines all matching events into a generic weekly schedule grouped by
+        weekday and aggregated into time slots. Recurring weekly slots are
+        deduplicated — a slot represents a recurring pattern, not individual dates.
+      operationId: getWeeklySchedule
+      parameters:
+        - name: semester_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: faculty_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: degree_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: module_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: course_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: staff_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: location_id
+          in: query
+          schema:
+            type: array
+            items: { type: integer }
+          style: form
+          explode: true
+        - name: weekday
+          in: query
+          description: "0=Monday … 6=Sunday. Repeatable OR."
+          schema:
+            type: array
+            items: { type: integer, minimum: 0, maximum: 6 }
+          style: form
+          explode: true
+        - name: slot_size_minutes
+          in: query
+          description: Duration of each time slot grid cell in minutes.
+          schema: { type: integer, minimum: 15, maximum: 120, default: 60 }
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Weekly schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyScheduleResponse'
+            text/calendar:
+              schema: { type: string, format: binary }
+
+  # =========================================================================
+  # ADMIN
+  # =========================================================================
+  /api/v4/admin/health:
+    get:
+      tags: [Admin]
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v4/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Global statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Aggregate counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+
+  /api/v4/admin/changes:
+    get:
+      tags: [Admin]
+      summary: All entity changes in a timestamp range
+      operationId: getAllChanges
+      parameters:
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - name: types
+          in: query
+          description: Restrict to these resource types. Repeatable OR.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [module, course, event, staff, location, building, degree, faculty, semester]
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/IncludeDeleted'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Changed entities and tombstones.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+
+  /api/v4/admin/sync:
+    get:
+      tags: [Admin]
+      summary: List ingestion runs
+      operationId: listSyncRuns
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [queued, running, succeeded, failed, canceled]
+          style: form
+          explode: true
+        - name: started_after
+          in: query
+          schema: { type: string, format: date-time }
+        - name: started_before
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Ingestion run list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRunListResponse'
+
+    post:
+      tags: [Admin]
+      summary: Trigger a new ingestion run
+      operationId: triggerSync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRunRequest'
+      responses:
+        '202':
+          description: Run accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v4/admin/sync/{run_id}:
+    get:
+      tags: [Admin]
+      summary: Get ingestion run details
+      operationId: getSyncRun
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Run details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRun'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v4/admin/sync/{run_id}/cancel:
+    post:
+      tags: [Admin]
+      summary: Cancel a running or queued ingestion run
+      operationId: cancelSyncRun
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Run cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRun'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Run cannot be cancelled in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+# ===========================================================================
+# COMPONENTS
+# ===========================================================================
+components:
+  # -------------------------------------------------------------------------
+  # Parameters
+  # -------------------------------------------------------------------------
+  parameters:
+    Id:
+      name: id
+      in: query
+      description: Filter by database ID(s). Repeatable OR.
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    Q:
+      name: q
+      in: query
+      description: Free-text search across primary text fields.
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      description: 1-based page number.
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      description: Items per page.
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    IncludeCounts:
+      name: include_counts
+      in: query
+      schema: { type: boolean, default: true }
+    Format:
+      name: format
+      in: query
+      description: Response format. Overrides the Accept header.
+      schema:
+        type: string
+        enum: [json, csv, ical]
+        default: json
+    UpdatedSince:
+      name: updated_since
+      in: query
+      description: Include only entities updated on or after this timestamp.
+      schema: { type: string, format: date-time }
+    UpdatedUntil:
+      name: updated_until
+      in: query
+      description: Include only entities updated on or before this timestamp.
+      schema: { type: string, format: date-time }
+    Since:
+      name: since
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    Until:
+      name: until
+      in: query
+      schema: { type: string, format: date-time }
+    IncludeDeleted:
+      name: include_deleted
+      in: query
+      description: Include deleted/tombstone entries in the result.
+      schema: { type: boolean, default: false }
+
+    # Path parameters
+    ModuleId:
+      name: module_id
+      in: path
+      required: true
+      schema: { type: integer }
+    CourseId:
+      name: course_id
+      in: path
+      required: true
+      schema: { type: integer }
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      schema: { type: integer }
+    StaffId:
+      name: staff_id
+      in: path
+      required: true
+      schema: { type: integer }
+    LocationId:
+      name: location_id
+      in: path
+      required: true
+      schema: { type: integer }
+    BuildingId:
+      name: building_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+    # Common query helpers
+    Fields:
+      name: fields
+      in: query
+      description: Sparse fieldset — comma-separated list of field names to include.
+      schema: { type: string }
+
+    ExportEntity:
+      name: entity
+      in: query
+      description: Target entity type to export.
+      schema:
+        type: string
+        enum: [modules, courses, events, staff, locations, buildings, degrees, faculties, semesters]
+        default: events
+
+    ExportName:
+      name: name
+      in: query
+      description: Partial case-insensitive match on entity name/title. Repeatable OR.
+      schema:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+    ExportNumber:
+      name: number
+      in: query
+      description: Partial case-insensitive match on datasource number. Repeatable OR.
+      schema:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+    ExportType:
+      name: type
+      in: query
+      description: Type filter (for entities that expose a type). Repeatable OR.
+      schema:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+    ExportBuilding:
+      name: building
+      in: query
+      description: Partial case-insensitive building name filter. Repeatable OR.
+      schema:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+    ExportDepartment:
+      name: department
+      in: query
+      description: Partial case-insensitive department filter. Repeatable OR.
+      schema:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+
+    ExportModuleId:
+      name: module_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportCourseId:
+      name: course_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportEventId:
+      name: event_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportStaffId:
+      name: staff_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportLocationId:
+      name: location_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportDegreeId:
+      name: degree_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportFacultyId:
+      name: faculty_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+    ExportSemesterId:
+      name: semester_id
+      in: query
+      schema:
+        type: array
+        items: { type: integer }
+      style: form
+      explode: true
+
+    ExportWeekdayStart:
+      name: weekday_start
+      in: query
+      description: Inclusive lower bound for weekday range (0=Monday ... 6=Sunday).
+      schema: { type: integer, minimum: 0, maximum: 6 }
+    ExportWeekdayEnd:
+      name: weekday_end
+      in: query
+      description: Inclusive upper bound for weekday range (0=Monday ... 6=Sunday).
+      schema: { type: integer, minimum: 0, maximum: 6 }
+    ExportStartTimeFrom:
+      name: start_time_from
+      in: query
+      schema: { type: string, format: time }
+    ExportStartTimeTo:
+      name: start_time_to
+      in: query
+      schema: { type: string, format: time }
+    ExportEndTimeFrom:
+      name: end_time_from
+      in: query
+      schema: { type: string, format: time }
+    ExportEndTimeTo:
+      name: end_time_to
+      in: query
+      schema: { type: string, format: time }
+    ExportCreditsMin:
+      name: credits_min
+      in: query
+      schema: { type: number }
+    ExportCreditsMax:
+      name: credits_max
+      in: query
+      schema: { type: number }
+    ExportYearStart:
+      name: year_start
+      in: query
+      description: Inclusive lower bound for semester year range.
+      schema: { type: integer }
+    ExportYearEnd:
+      name: year_end
+      in: query
+      description: Inclusive upper bound for semester year range.
+      schema: { type: integer }
+
+    ExportHasCourses:
+      name: has_courses
+      in: query
+      schema: { type: boolean }
+    ExportHasEvents:
+      name: has_events
+      in: query
+      schema: { type: boolean }
+    ExportHasStaff:
+      name: has_staff
+      in: query
+      schema: { type: boolean }
+
+    ExportSortBy:
+      name: sort_by
+      in: query
+      description: Field used for sorting export rows.
+      schema: { type: string }
+    ExportSortOrder:
+      name: sort_order
+      in: query
+      description: Sort order direction.
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+    IcalTitleFormat:
+      name: title_format
+      in: query
+      description: Template used for iCal SUMMARY values.
+      schema: { type: string }
+    IcalLocationFormat:
+      name: location_format
+      in: query
+      description: Template used for iCal LOCATION values.
+      schema: { type: string }
+    IcalDescriptionFormat:
+      name: description_format
+      in: query
+      description: Template used for iCal DESCRIPTION values.
+      schema: { type: string }
+    IcalIncludeCourseInfo:
+      name: include_course_info
+      in: query
+      schema: { type: boolean, default: true }
+    IcalIncludeEventInfo:
+      name: include_event_info
+      in: query
+      schema: { type: boolean, default: true }
+    IcalIncludeStaffInfo:
+      name: include_staff_info
+      in: query
+      schema: { type: boolean, default: true }
+    IcalIncludeRelationshipInfo:
+      name: include_relationship_info
+      in: query
+      schema: { type: boolean, default: true }
+
+    EventDateFrom:
+      name: date_from
+      in: query
+      description: Include events on or after this date.
+      schema: { type: string, format: date }
+    EventDateTo:
+      name: date_to
+      in: query
+      description: Include events on or before this date.
+      schema: { type: string, format: date }
+    EventWeekday:
+      name: weekday
+      in: query
+      description: "0=Monday … 6=Sunday. Repeatable OR."
+      schema:
+        type: array
+        items: { type: integer, minimum: 0, maximum: 6 }
+      style: form
+      explode: true
+
+    # Include (embed) parameters
+    ModuleInclude:
+      name: include
+      in: query
+      description: Related resources to embed.
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [courses, events, staff, degrees]
+      style: form
+      explode: false
+    CourseInclude:
+      name: include
+      in: query
+      description: Related resources to embed.
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [module, events, staff]
+      style: form
+      explode: false
+    EventInclude:
+      name: include
+      in: query
+      description: Related resources to embed.
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [course, module, staff, location]
+      style: form
+      explode: false
+
+    # Sort parameters
+    ModuleSort:
+      name: sort
+      in: query
+      description: "Prefix `-` for descending."
+      schema:
+        type: string
+        enum: [name, -name, number, -number, credits, -credits, duration_semesters, -duration_semesters]
+    CourseSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [name, -name, number, -number, type, -type, weekly_hours, -weekly_hours]
+    EventSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [date, -date, start_time, -start_time, end_time, -end_time, weekday, -weekday]
+    StaffSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [name, -name]
+    LocationSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [name, -name, seats, -seats, size, -size]
+
+  # -------------------------------------------------------------------------
+  # Responses
+  # -------------------------------------------------------------------------
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  # -------------------------------------------------------------------------
+  # Schemas
+  # -------------------------------------------------------------------------
+  schemas:
+
+    # -- RFC 9457 Problem Details ------------------------------------------
+    Problem:
+      type: object
+      required: [status, title]
+      properties:
+        type:
+          type: string
+          format: uri
+          default: about:blank
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+    # -- Pagination --------------------------------------------------------
+    Pagination:
+      type: object
+      required: [page, page_size, total_items, total_pages]
+      properties:
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1 }
+        total_items: { type: integer, minimum: 0 }
+        total_pages: { type: integer, minimum: 0 }
+
+    # -- Distinct values ---------------------------------------------------
+    DistinctValue:
+      type: object
+      required: [value]
+      properties:
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: integer
+        count:
+          type: integer
+          minimum: 0
+
+    DistinctValuesResponse:
+      type: object
+      required: [field, items]
+      properties:
+        field: { type: string }
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DistinctValue'
+
+    # -- Changes -----------------------------------------------------------
+    ChangeItem:
+      type: object
+      required: [resource_type, resource_id, action, changed_at]
+      properties:
+        resource_type:
+          type: string
+          enum: [module, course, event, staff, location, building, degree, faculty, semester]
+        resource_id: { type: integer }
+        action:
+          type: string
+          enum: [created, updated, deleted]
+        changed_at:
+          type: string
+          format: date-time
+        item:
+          description: Full resource snapshot (null for deleted items).
+          nullable: true
+          type: object
+
+    ChangesResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeItem'
+
+    # -- Catalog schemas ---------------------------------------------------
+    Semester:
+      type: object
+      required: [id, name, year, term]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        year: { type: integer }
+        term: { type: string }
+
+    SemesterListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Semester'
+
+    Faculty:
+      type: object
+      required: [id, name, prefix]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        prefix: { type: integer }
+
+    FacultyListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Faculty'
+
+    Degree:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        faculty_id:
+          type: integer
+          nullable: true
+        faculty:
+          nullable: true
+          $ref: '#/components/schemas/Faculty'
+
+    DegreeListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Degree'
+
+    EventType:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+
+    EventTypeListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventType'
+
+    Status:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+
+    StatusListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Status'
+
+    # -- Building / Location schemas ---------------------------------------
+    BuildingSummary:
+      type: object
+      required: [id, name, short]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        short: { type: string }
+        address:
+          type: string
+          nullable: true
+
+    Building:
+      allOf:
+        - $ref: '#/components/schemas/BuildingSummary'
+        - type: object
+          properties:
+            location_count:
+              type: integer
+              minimum: 0
+
+    BuildingListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BuildingSummary'
+
+    LocationSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        external_id:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        seats:
+          type: integer
+          nullable: true
+          minimum: 0
+        size:
+          type: number
+          nullable: true
+          minimum: 0
+        accessibility:
+          type: boolean
+          nullable: true
+        building_id:
+          type: integer
+          nullable: true
+
+    LocationDetail:
+      allOf:
+        - $ref: '#/components/schemas/LocationSummary'
+        - type: object
+          properties:
+            description:
+              type: string
+              nullable: true
+            building:
+              nullable: true
+              $ref: '#/components/schemas/BuildingSummary'
+
+    LocationListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationSummary'
+
+    # -- Staff schemas -----------------------------------------------------
+    StaffSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+
+    StaffDetail:
+      allOf:
+        - $ref: '#/components/schemas/StaffSummary'
+        - type: object
+          properties:
+            course_count: { type: integer, minimum: 0 }
+            event_count: { type: integer, minimum: 0 }
+            courses:
+              type: array
+              items:
+                $ref: '#/components/schemas/CourseSummary'
+            modules:
+              type: array
+              items:
+                $ref: '#/components/schemas/ModuleSummary'
+
+    StaffListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffSummary'
+
+    # -- Module schemas ----------------------------------------------------
+    ModuleSummary:
+      type: object
+      required: [id, name, number]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        number: { type: string }
+        language:
+          type: string
+          nullable: true
+        duration_semesters:
+          type: integer
+          nullable: true
+          minimum: 1
+        credits:
+          type: integer
+          nullable: true
+          minimum: 0
+        frequency:
+          type: string
+          nullable: true
+        last_updated:
+          type: string
+          format: date-time
+          nullable: true
+
+    ModuleDetail:
+      allOf:
+        - $ref: '#/components/schemas/ModuleSummary'
+        - type: object
+          properties:
+            goals:
+              type: string
+              nullable: true
+            content:
+              type: string
+              nullable: true
+            exam_prerequisites:
+              type: string
+              nullable: true
+            prerequisites:
+              type: string
+              nullable: true
+            responsible_staff:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffSummary'
+            start_semesters:
+              type: array
+              items:
+                $ref: '#/components/schemas/Semester'
+            courses:
+              type: array
+              items:
+                $ref: '#/components/schemas/CourseSummary'
+            degrees:
+              description: Degrees and the semester number in which this module appears.
+              type: array
+              items:
+                $ref: '#/components/schemas/ModuleDegreeLink'
+
+    ModuleDegreeLink:
+      type: object
+      required: [degree_id]
+      properties:
+        degree_id: { type: integer }
+        degree:
+          $ref: '#/components/schemas/Degree'
+        semester_number:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: The study-plan semester number in the degree program.
+
+    ModuleListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModuleSummary'
+
+    # -- Course schemas ----------------------------------------------------
+    CourseSummary:
+      type: object
+      required: [id, name, number]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        number: { type: string }
+        type:
+          type: string
+          nullable: true
+        weekly_hours:
+          type: integer
+          nullable: true
+          minimum: 0
+        language:
+          type: string
+          nullable: true
+        status_id:
+          type: integer
+          nullable: true
+        module_id:
+          type: integer
+          nullable: true
+        last_updated:
+          type: string
+          format: date-time
+          nullable: true
+
+    CourseDetail:
+      allOf:
+        - $ref: '#/components/schemas/CourseSummary'
+        - type: object
+          properties:
+            status:
+              nullable: true
+              $ref: '#/components/schemas/Status'
+            module:
+              nullable: true
+              $ref: '#/components/schemas/ModuleSummary'
+            staff:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffSummary'
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/EventSummary'
+
+    CourseListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseSummary'
+
+    # -- Event schemas -----------------------------------------------------
+    EventSummary:
+      type: object
+      required: [id, number, name]
+      properties:
+        id: { type: integer }
+        number: { type: string }
+        name: { type: string }
+        type_id:
+          type: integer
+          nullable: true
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+        weekday:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 6
+          description: "0=Monday … 6=Sunday. Null for one-off/dated events."
+        date:
+          type: string
+          format: date
+          nullable: true
+          description: Specific calendar date (for non-recurring events).
+        location_id:
+          type: integer
+          nullable: true
+        last_updated:
+          type: string
+          format: date-time
+          nullable: true
+
+    EventDetail:
+      allOf:
+        - $ref: '#/components/schemas/EventSummary'
+        - type: object
+          properties:
+            type:
+              nullable: true
+              $ref: '#/components/schemas/EventType'
+            location:
+              nullable: true
+              $ref: '#/components/schemas/LocationSummary'
+            staff:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffSummary'
+            course_id:
+              type: integer
+              nullable: true
+            course:
+              nullable: true
+              $ref: '#/components/schemas/CourseSummary'
+
+    EventListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventSummary'
+
+    ExportJsonResponse:
+      type: object
+      required: [meta, entity, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        entity:
+          type: string
+          enum: [modules, courses, events, staff, locations, buildings, degrees, faculties, semesters]
+        items:
+          type: array
+          items:
+            type: object
+
+    # -- Weekly schedule ---------------------------------------------------
+    WeeklyTimeSlot:
+      type: object
+      required: [weekday, start_time, end_time, events]
+      properties:
+        weekday:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: "0=Monday … 6=Sunday."
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventSummary'
+
+    WeeklyScheduleResponse:
+      type: object
+      required: [slot_size_minutes, days]
+      properties:
+        slot_size_minutes: { type: integer }
+        days:
+          description: Ordered Mon–Sun, only includes days with events.
+          type: array
+          items:
+            type: object
+            required: [weekday, label, slots]
+            properties:
+              weekday: { type: integer, minimum: 0, maximum: 6 }
+              label: { type: string }
+              slots:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WeeklyTimeSlot'
+
+    # -- Admin / Sync ------------------------------------------------------
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        version: { type: string }
+        database:
+          type: string
+          enum: [ok, degraded, down]
+
+    StatsResponse:
+      type: object
+      required: [modules, courses, events, staff, locations, buildings, degrees, faculties, semesters]
+      properties:
+        modules: { type: integer, minimum: 0 }
+        courses: { type: integer, minimum: 0 }
+        events: { type: integer, minimum: 0 }
+        staff: { type: integer, minimum: 0 }
+        locations: { type: integer, minimum: 0 }
+        buildings: { type: integer, minimum: 0 }
+        degrees: { type: integer, minimum: 0 }
+        faculties: { type: integer, minimum: 0 }
+        semesters: { type: integer, minimum: 0 }
+        last_sync:
+          type: string
+          format: date-time
+          nullable: true
+
+    SyncRunRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [full, incremental, partial]
+          description: |
+            - full: Re-ingest all data from scratch.
+            - incremental: Only ingest new or updated data since the last successful run.
+            - partial: Only ingest the specified entity types.
+        entities:
+          description: For `partial` mode — restrict to these entity types.
+          type: array
+          items:
+            type: string
+            enum: [modules, courses, events, staff, locations]
+        source:
+          description: Which upstream endpoint to use.
+          type: string
+          enum: [timetable_informatics, vorlesungsverzeichnis]
+          default: vorlesungsverzeichnis
+        since:
+          description: For `incremental` mode — override the auto-detected watermark.
+          type: string
+          format: date-time
+
+    SyncRun:
+      type: object
+      required: [id, mode, status, created_at]
+      properties:
+        id: { type: string }
+        mode:
+          type: string
+          enum: [full, incremental, partial]
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, canceled]
+        source:
+          type: string
+          nullable: true
+        entities:
+          type: array
+          nullable: true
+          items: { type: string }
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        records_upserted: { type: integer, minimum: 0 }
+        records_deleted: { type: integer, minimum: 0 }
+        error_message:
+          type: string
+          nullable: true
+
+    SyncRunListResponse:
+      type: object
+      required: [meta, items]
+      properties:
+        meta:
+          $ref: '#/components/schemas/Pagination'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncRun'
