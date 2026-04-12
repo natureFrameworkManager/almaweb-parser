@@ -82,7 +82,7 @@ class Module(SQLModel, table=True):
     responsible_persons: list["Staff"] = Relationship(back_populates="modules", link_model=ModuleStaffLink)
     start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
     degrees: list["Degree"] = Relationship(back_populates="modules", link_model=ModuleDegreeLink)
-    courses: list["Course"] = Relationship(back_populates="module", link_model=ModuleCourseLink)
+    courses: list["Course"] = Relationship(back_populates="modules", link_model=ModuleCourseLink)
 
 class Course(SQLModel, table=True):
     """
@@ -98,11 +98,11 @@ class Course(SQLModel, table=True):
     type: str = ""
     weekly_hours: int = 0
     language: str = ""
-    status: int = Field(foreign_key="status.id")
+    status: int | None = Field(foreign_key="status.id") # TODO: Remove None
 
     staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
     modules: list["Module"] = Relationship(back_populates="courses", link_model=ModuleCourseLink)
-    events: list["Event"] = Relationship(back_populates="course", link_model=CourseEventLink)
+    events: list["Event"] = Relationship(back_populates="courses", link_model=CourseEventLink)
 
 
 class Event(SQLModel, table=True):
@@ -115,13 +115,14 @@ class Event(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     number: str = ""
     name: str = ""
-    type: int = Field(foreign_key="eventtype.id")
+    type: int | None = Field(foreign_key="eventtype.id") # TODO: Remove None
     start_time: time
     end_time: time
     weekday: int | None = None
     event_date: date | None = None
-    location: int = Field(foreign_key="location.id")
+    location_id: int | None = Field(foreign_key="location.id") # TODO: Remove None
 
+    location: "Location" = Relationship(back_populates="events")
     staff: list["Staff"] = Relationship(back_populates="events", link_model=EventStaffLink)
     courses: list["Course"] = Relationship(back_populates="events", link_model=CourseEventLink)
 
@@ -138,8 +139,9 @@ class Location(SQLModel, table=True):
     seats: int | None = None # The number of seats available in the location, if known
     size: float | None = None # The size of the location in square meters, if known
     accessibility: str = "" # Information about the accessibility of the location, e.g. "barrierefrei", "nicht barrierefrei", etc.
-    building: int | None = Field(foreign_key="building.id") # The building where the location is situated, if known
+    building_id: int | None = Field(foreign_key="building.id") # The building where the location is situated, if known
 
+    building: "Building" = Relationship(back_populates="locations")
     events: list["Event"] = Relationship(back_populates="location")
 
 class Building(SQLModel, table=True):
@@ -161,8 +163,9 @@ class Degree(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
-    faculty: int = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
+    faculty_id: int = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
 
+    faculty: "Faculty" = Relationship(back_populates="degrees")
     modules: list["Module"] = Relationship(back_populates="degrees", link_model=ModuleDegreeLink)
 
 class Faculty(SQLModel, table=True):

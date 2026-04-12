@@ -4,7 +4,7 @@ from typing import Any
 
 import scrapy
 from scrapy.http import Response
-from ..database.database import create_db_and_tables
+from src.database.database import create_db_and_tables
 
 class TreeNode:
     def __init__(self, name, parent=None):

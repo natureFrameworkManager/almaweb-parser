@@ -1,14 +1,19 @@
 import re
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from threading import Event
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
-from ..database.database import insert_module_graph
-from .utils import _WHITESPACE_RE, _cancelled
+try:
+    from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
+    from .utils import _WHITESPACE_RE, _cancelled
+    from .types import ModuleType
+except ModuleNotFoundError:
+    from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
+    from src.parser.utils import _WHITESPACE_RE, _cancelled
+    from src.parser.types import ModuleType
 
 if TYPE_CHECKING:
     from .crawler import ModuleLink
@@ -33,7 +38,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
     if not moduleList:
         return []
 
-    parsed_by_index: dict[int, dict] = {}
+    parsed_by_index: dict[int, ModuleType] = {}
 
     # One shared client for all module and course requests; the pool size covers
     # up to MAX_CONCURRENT_MODULE_REQUESTS modules each fetching
@@ -62,6 +67,10 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                     idx, parsed = future.result()
                     if parsed is not None:
                         parsed_by_index[idx] = parsed
+                        try:
+                            from database.database import insert_module_graph
+                        except ModuleNotFoundError:
+                            from src.database.database import insert_module_graph
                         insert_module_graph(parsed)
 
             if _cancelled(cancel_event):
@@ -77,7 +86,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
     return modules
 
 
-def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, dict | None]:
+def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, ModuleType | None]:
     try:
         if _cancelled(cancel_event):
             return index, None
@@ -99,7 +108,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Clie
     return index, None
 
 
-def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None) -> dict | None:
+def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None) -> ModuleType | None:
     if _cancelled(cancel_event):
         return None
 
@@ -117,7 +126,7 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
     ]
     courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client)
 
-    module = {
+    module: ModuleType = {
         "name": name,
         "number": number,
         "path": path,
@@ -132,7 +141,7 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         "prerequisites": parse_prerequisites(values["prerequisites"]),
         "courses": courses,
     }
-    print(f"Parsed module {module['number']} - {module['name']}. Includes {len(module['courses'])} courses and {sum(len(course['events']) for course in module['courses'])} events.")
+    print(f"Parsed module {module['number']} - {module['name']}. Includes {len(module['courses'])} courses and {sum(len(course['events']) for course in module['courses'] if course is not None)} events.")
     return module
 
 

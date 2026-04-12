@@ -1,3 +1,4 @@
+from typing import TypedDict
 import re
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, time
@@ -6,7 +7,12 @@ from threading import Event
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from .utils import _WHITESPACE_RE, _cancelled
+try:
+    from .utils import _WHITESPACE_RE, _cancelled
+    from .types import CourseType, EventType
+except ModuleNotFoundError:
+    from src.parser.utils import _WHITESPACE_RE, _cancelled
+    from src.parser.types import CourseType, EventType
 
 MAX_CONCURRENT_COURSE_REQUESTS = 8
 
@@ -25,11 +31,11 @@ _COURSE_LABEL_MAP: dict[str, tuple[str, str]] = {
     "Unterrichtssprache":    ("language",     "span"),
 }
 
-def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None):
+def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None) -> list[CourseType | None]:
     if not urls:
         return []
 
-    courses_by_index: dict[int, dict | None] = {}
+    courses_by_index: dict[int, CourseType | None] = {}
 
     own_client = client is None
     if own_client:
@@ -71,7 +77,7 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None, client:
     return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
 
 
-def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, bool, dict | None]:
+def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, bool, CourseType | None]:
     try:
         if _cancelled(cancel_event):
             return index, False, None
@@ -90,7 +96,7 @@ def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_e
 
     return index, False, None
 
-def parseCourse(html_content: str):
+def parseCourse(html_content: str) -> CourseType | None:
     soup = BeautifulSoup(html_content, 'html.parser')
     header = soup.find("h1")
     if not header:
@@ -98,7 +104,7 @@ def parseCourse(html_content: str):
         return None
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
-    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")))
+    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name)
     return {
         "name": name,
         "number": number,
@@ -121,7 +127,6 @@ def find_termine_section(right_content: Tag | None) -> Tag | None:
             if isinstance(child, Tag) and "Termine" in child.get_text(" ", strip=True):
                 return child
 
-    print("Failed to find 'Termine' section in course page.")
     return None
 
 
@@ -145,9 +150,9 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
 
     return values
 
-def extract_events(content: Tag | None) -> list[dict[str, str | list[str] | date | time | None]]:
+def extract_events(content: Tag | None, course_name: str) -> list[EventType]:
     if content is None:
-        print("No events content found for course.")
+        print(f"No events content found for course: {course_name}")
         return []
 
     header = content.find("div", recursive=False)
