@@ -10,9 +10,11 @@ from bs4 import BeautifulSoup, Tag
 try:
     from .utils import _WHITESPACE_RE, _cancelled
     from .types import CourseType, EventType
+    from .room_parser import fetch_and_parse_room_details
 except ModuleNotFoundError:
     from src.parser.utils import _WHITESPACE_RE, _cancelled
     from src.parser.types import CourseType, EventType
+    from src.parser.room_parser import fetch_and_parse_room_details
 
 MAX_CONCURRENT_COURSE_REQUESTS = 8
 
@@ -169,16 +171,20 @@ def extract_events(content: Tag | None, course_name: str) -> list[EventType]:
         ]
         if len(cells) < 6:
             continue
-        number, date_raw, start_raw, end_raw, location, staff_raw = [
+        number, date_raw, start_raw, end_raw, room_text, staff_raw = [
             cell.get_text(" ", strip=True) for cell in cells[:6]
         ]
+        room_url = cells[4].find("a", attrs={"name": "appointmentRooms"})
+        room = None
+        if room_url:
+            room = fetch_and_parse_room_details(room_url["href"], room_text, httpx.Client(), None)[2]  # type: ignore
         staff = [s.strip() for s in re.split(r"[,;]", staff_raw) if s.strip()]
         events.append({
             "number": number,
             "event_date": _parse_date(date_raw),
             "start_time": _parse_time(start_raw),
             "end_time": _parse_time(end_raw),
-            "location": location,
+            "location": room,
             "staff": staff,
         })
     return events

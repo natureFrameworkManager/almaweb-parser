@@ -141,7 +141,8 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         "prerequisites": parse_prerequisites(values["prerequisites"]),
         "courses": courses,
     }
-    print(f"Parsed module {module['number']} - {module['name']}. Includes {len(module['courses'])} courses and {sum(len(course['events']) for course in module['courses'] if course is not None)} events.")
+    room_count = len(set(room for course in module['courses'] if course is not None for event in course['events'] if event is not None for room in ([event.get('room')] if event.get('room') else [])))
+    print(f"Parsed module {module['number']} - {module['name']}. Includes {len(module['courses'])} courses and {sum(len(course['events']) for course in module['courses'] if course is not None)} events with {room_count} rooms.")
     return module
 
 

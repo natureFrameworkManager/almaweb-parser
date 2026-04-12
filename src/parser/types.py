@@ -1,12 +1,27 @@
 from typing import TypedDict
 from datetime import date, time
 
+class BuildingType(TypedDict):
+    name: str
+    short_name: str
+    address: str
+
+class RoomType(TypedDict):
+    name: str
+    external_id: str
+    description: str
+    type: str
+    seats: int | None
+    size: float | None
+    accessibility: str
+    building: BuildingType
+
 class EventType(TypedDict):
     number: str
     event_date: date
     start_time: time
     end_time: time
-    location: str
+    location: RoomType | None
     staff: list[str]
 
 class CourseType(TypedDict):

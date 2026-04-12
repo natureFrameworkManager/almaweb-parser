@@ -4,9 +4,9 @@ from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine, select
 
 try:
-    from parser.types import CourseType, EventType, ModuleType
+    from parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType
 except ModuleNotFoundError:
-    from src.parser.types import CourseType, EventType, ModuleType
+    from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType
 
 try:
     from .model import Course, Event, Module, ModuleCourseLink, CourseEventLink
@@ -109,6 +109,77 @@ def _get_or_insert_staff(session: Session, name: str) -> int:
     if staff.id is None:
         raise RuntimeError("Could not get staff member id after add and flush to database")
     return staff.id
+
+def _get_or_insert_building(session: Session, building_data: BuildingType) -> int:
+    """
+    Look up a building by its name, short name, and address. If it does not exist, insert it.
+
+    Returns the building ID.
+    """
+
+    try:
+        from .model import Building
+    except ModuleNotFoundError:
+        from src.database.model import Building
+
+    building = session.exec(
+        select(Building)
+        .where(Building.name == building_data["name"])
+        .where(Building.short_name == building_data["short_name"])
+        .where(Building.address == building_data["address"])
+    ).first()
+
+    if building is not None:
+        if building.id is None:
+            raise RuntimeError("Building to add to database has no id")
+        return building.id
+
+    building = Building(
+        name=building_data["name"],
+        short_name=building_data["short_name"],
+        address=building_data["address"]
+    )
+    session.add(building)
+    session.flush()
+    if building.id is None:
+        raise RuntimeError("Could not get building id after add and flush to database")
+    return building.id
+
+def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
+    """
+    Look up a location (room) by its external ID. If it does not exist, insert it.
+
+    Returns the location ID.
+    """
+
+    try:
+        from .model import Location
+    except ModuleNotFoundError:
+        from src.database.model import Location
+
+    location = session.exec(select(Location).where(Location.external_id == room_data["external_id"])).first()
+    if location is not None:
+        if location.id is None:
+            raise RuntimeError("Location to add to database has no id")
+        return location.id
+    
+    building_id = _get_or_insert_building(session, room_data["building"])
+
+    location = Location(
+        name=room_data["name"],
+        external_id=room_data["external_id"],
+        description=room_data.get("description", ""),
+        type=room_data.get("type", ""),
+        seats=room_data.get("seats"),
+        size=room_data.get("size"),
+        accessibility=room_data.get("accessibility", ""),
+        building_id=building_id
+    )
+    session.add(location)
+    session.flush()
+    if location.id is None:
+        raise RuntimeError("Could not get location id after add and flush to database")
+    return location.id
 
 def _link_module_course(session: Session, module_id: int, course_id: int):
     """
@@ -299,6 +370,10 @@ def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, 
         if event.id is None:
             raise RuntimeError("Event to add to database has no id")
         return event.id, False
+    
+    location_id = None
+    if event_data["location"] is not None:
+        location_id = _get_or_insert_location(session, event_data["location"])
 
     # Unpacking of event_data into CourseEvent constructor, adding course_id for the foreign key relationship
     event = Event(
@@ -307,13 +382,12 @@ def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, 
         start_time=event_data["start_time"],
         end_time=event_data["end_time"],
         event_date=event_data.get("event_date", None),
+        location_id=location_id
     )  # type: ignore
     session.add(event)
     session.flush()
     if event.id is None:
         raise RuntimeError("Could not get event id after add and flush to database")
-
-    # Handle location -> room_parser.py
 
     # Link staff members to the event, inserting them if they do not already exist
     for staff_name in event_data.get("staff", []):
