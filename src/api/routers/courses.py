@@ -1,8 +1,8 @@
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Sequence
+from typing import Any, Sequence, Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
@@ -11,7 +11,7 @@ from sqlmodel import select
 from database.database import SessionDep
 from database.model import Course, CourseEvent, Module
 from schemas.courses import CourseDetailResponseModel, CourseListResponseModel
-
+from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
@@ -265,3 +265,65 @@ def get_course(
         return JSONResponse(content=jsonable_encoder(item))
 
     return course
+
+@router.get("/{course_id}/events", summary="List events for a course")
+def get_course_events(
+    course_id: int,
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    exports: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events associated with a specific course."""
+    pass
+
+@router.get("/{course_id}/module", summary="Get module for a course")
+def get_course_module(
+    course_id: int,
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    exports: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'events'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
+):
+    """Retrieve the module associated with a specific course."""
+    pass
+
+@router.get("/{course_id}/staff", summary="Get staff for a course")
+def get_course_staff(
+    course_id: int,
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    exports: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
+):
+    """Retrieve the staff associated with a specific course."""
+    pass
+
+@router.get("/distinct/{field_name}", summary="Get distinct values for a course field")
+def get_course_distinct_field(
+    session: SessionDep,
+    field_name: str,
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
+    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+):
+    """Retrieve distinct values for a specific field across all courses."""
+    pass
+
+@router.get("/changes", summary="Get course changelog")
+def get_course_changes(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    since: str = Query(..., description="Filter changes that occurred on or after this ISO 8601 datetime."),
+    until: str | None = Query(None, description="Filter changes that occurred on or before this ISO 8601 datetime."),
+    include_deleted: bool = Query(False, description="Whether to include deleted courses in the changelog."),
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
+    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+):
+    """Retrieve a changelog of course modifications within a specified time range."""
+    pass

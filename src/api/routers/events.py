@@ -2,7 +2,7 @@ from collections import defaultdict
 from enum import Enum
 from typing import Annotated, Any, Sequence
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
@@ -13,7 +13,7 @@ import re
 from database.database import SessionDep
 from database.model import CourseEvent, Course, Module
 from schemas.events import EventDetailResponseModel, EventListResponseModel
-
+from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
@@ -214,6 +214,80 @@ def get_events(
         "items": events,
     }
 
+@router.get("/today", summary="List today's events")
+def get_todays_events(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events occurring today."""
+    pass
+
+@router.get("/tomorrow", summary="List tomorrow's events")
+def get_tomorrows_events(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events occurring tomorrow."""
+    pass
+
+@router.get("/week", summary="List events for the current week")
+def get_weeks_events(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events occurring in the current week (Monday to Sunday)."""
+    pass
+
+@router.get("/day/{date}", summary="List events for a specific date")
+def get_events_by_date(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    date: str,
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events occurring on a specific date."""
+    pass
+
+@router.get("/week/{date}", summary="List events for a specific week")
+def get_events_by_week(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    date: str,
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events occurring in the week of a specific date (Monday to Sunday)."""
+    pass
+
+@router.get("/month/{date}", summary="List events for a specific month")
+def get_events_by_month(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    date: str,
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
+):
+    """Retrieve a list of events occurring in the month of a specific date."""
+    pass
 
 @router.get("/{event_id}", summary="Get an event by ID", response_model=EventDetailResponseModel)
 def get_event(
@@ -268,3 +342,70 @@ def get_event(
         return JSONResponse(content=jsonable_encoder(item))
 
     return event
+
+@router.get("/{event_id}/course", summary="Get course for an event")
+def get_event_course(
+    session: SessionDep,
+    event_id: int,
+    export: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+):
+    """Retrieve the course associated with a specific event."""
+    pass
+
+@router.get("/{event_id}/module", summary="Get module for an event")
+def get_event_module(
+    session: SessionDep,
+    event_id: int,
+    export: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+):
+    """Retrieve the module associated with a specific event."""
+    pass
+
+@router.get("/{event_id}/staff", summary="Get staff for an event")
+def get_event_staff(
+    session: SessionDep,
+    event_id: int,
+    export: Annotated[dict, Depends(export_parameters)],
+    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'module'. Repeatable for multiple relations."),
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+):
+    """Retrieve the staff members associated with a specific event."""
+    pass
+
+@router.get("/{event_id}/location", summary="Get location for an event")
+def get_event_location(
+    session: SessionDep,
+    event_id: int,
+    export: Annotated[dict, Depends(export_parameters)],
+    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+):
+    """Retrieve the location associated with a specific event."""
+    pass
+
+@router.get("/distinct/{field_name}", summary="Get distinct values for an event field")
+def get_event_distinct_field(
+    session: SessionDep,
+    field_name: str,
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
+    format: str | None = Query(None, description="Format of the returned distinct values. Possible values: 'json' (default) or 'csv'."),
+):
+    """Retrieve a list of distinct values for a specified event field."""
+    pass
+
+@router.get("/changes", summary="List recent event changes")
+def get_event_changes(
+    session: SessionDep,
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
+    since: str | None = Query(None, description="Filter changes that occurred after this timestamp (ISO 8601 format)."),
+    until: str | None = Query(None, description="Filter changes that occurred before this timestamp (ISO 8601 format)."),
+    include_deleted: bool = Query(False, description="Whether to include deleted events in the changelog."),
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
+    format: str | None = Query(None, description="Format of the returned changelog entries. Possible values: 'json' (default) or 'csv'."),
+):
+    """Retrieve a list of recent changes to events."""
+    pass
