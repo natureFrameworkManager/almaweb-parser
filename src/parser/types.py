@@ -17,6 +17,7 @@ class CourseType(TypedDict):
     weekly_hours: int
     language: str
     events: list[EventType]
+    status: str
 
 class ModuleType(TypedDict):
     name: str

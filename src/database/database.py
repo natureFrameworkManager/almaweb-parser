@@ -60,6 +60,56 @@ def _get_or_insert_event_type(session: Session, name: str) -> int:
         raise RuntimeError("Could not get event type id after add and flush to database")
     return event_type.id
 
+def _get_or_insert_status(session: Session, name: str) -> int:
+    """
+    Look up a course status by name. If it does not exist, insert it.
+
+    Returns the course status ID.
+    """
+
+    try:
+        from .model import Status
+    except ModuleNotFoundError:
+        from src.database.model import Status
+
+    status = session.exec(select(Status).where(Status.name == name)).first()
+    if status is not None:
+        if status.id is None:
+            raise RuntimeError("Course status to add to database has no id")
+        return status.id
+
+    status = Status(name=name)
+    session.add(status)
+    session.flush()
+    if status.id is None:
+        raise RuntimeError("Could not get course status id after add and flush to database")
+    return status.id
+
+def _get_or_insert_staff(session: Session, name: str) -> int:
+    """
+    Look up a staff member by name. If they do not exist, insert them.
+
+    Returns the staff member ID.
+    """
+
+    try:
+        from .model import Staff
+    except ModuleNotFoundError:
+        from src.database.model import Staff
+
+    staff = session.exec(select(Staff).where(Staff.name == name)).first()
+    if staff is not None:
+        if staff.id is None:
+            raise RuntimeError("Staff member to add to database has no id")
+        return staff.id
+
+    staff = Staff(name=name)
+    session.add(staff)
+    session.flush()
+    if staff.id is None:
+        raise RuntimeError("Could not get staff member id after add and flush to database")
+    return staff.id
+
 def _link_module_course(session: Session, module_id: int, course_id: int):
     """
     Create a link between a module and a course in the ModuleCourseLink association table, if it does not already exist.
@@ -85,6 +135,60 @@ def _link_course_event(session: Session, course_id: int, event_id: int):
 
     if link is None:
         session.add(CourseEventLink(course_id=course_id, event_id=event_id))
+
+def _link_module_responsible_person(session: Session, module_id: int, staff_id: int):
+    """
+    Create a link between a module and its responsible person in the ModuleStaffLink association table, if it does not already exist.
+    """
+    try:
+        from .model import ModuleStaffLink
+    except ModuleNotFoundError:
+        from src.database.model import ModuleStaffLink
+
+    link = session.exec(
+        select(ModuleStaffLink)
+        .where(ModuleStaffLink.module_id == module_id)
+        .where(ModuleStaffLink.staff_id == staff_id)
+    ).first()
+
+    if link is None:
+        session.add(ModuleStaffLink(module_id=module_id, staff_id=staff_id))
+
+def _link_course_staff(session: Session, course_id: int, staff_id: int):
+    """
+    Create a link between a course and a staff member in the CourseStaffLink association table, if it does not already exist.
+    """
+    try:
+        from .model import CourseStaffLink
+    except ModuleNotFoundError:
+        from src.database.model import CourseStaffLink
+
+    link = session.exec(
+        select(CourseStaffLink)
+        .where(CourseStaffLink.course_id == course_id)
+        .where(CourseStaffLink.staff_id == staff_id)
+    ).first()
+
+    if link is None:
+        session.add(CourseStaffLink(course_id=course_id, staff_id=staff_id))
+
+def _link_event_staff(session: Session, event_id: int, staff_id: int):
+    """
+    Create a link between an event and a staff member in the EventStaffLink association table, if it does not already exist.
+    """
+    try:
+        from .model import EventStaffLink
+    except ModuleNotFoundError:
+        from src.database.model import EventStaffLink
+
+    link = session.exec(
+        select(EventStaffLink)
+        .where(EventStaffLink.event_id == event_id)
+        .where(EventStaffLink.staff_id == staff_id)
+    ).first()
+
+    if link is None:
+        session.add(EventStaffLink(event_id=event_id, staff_id=staff_id))
 
 def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[int, bool]:
     """
@@ -123,6 +227,11 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
     session.flush()
     if module.id is None:
         raise RuntimeError("Could not get module id after add and flush to database")
+    # Link module responsible person to the module, inserting them if they do not already exist
+    responsible_person_name = module_data.get("responsible_person", "")
+    if responsible_person_name:
+        staff_id = _get_or_insert_staff(session, responsible_person_name)
+        _link_module_responsible_person(session, module.id, staff_id)
     return module.id, True
 
 
@@ -138,7 +247,8 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
         select(Course)
         .where(Course.name == course_data["name"])
         .where(Course.number == course_data["number"])
-        .where(Course.type == course_data["type"])
+        .where(Course.type == _get_or_insert_event_type(session, course_data["type"]))
+        .where(Course.language == course_data.get("language", ""))
     ).first()
 
     if course is not None:
@@ -150,16 +260,22 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
     course = Course(
         name=course_data["name"],
         number=course_data["number"],
-        type=course_data["type"],
+        type=_get_or_insert_event_type(session, course_data["type"]),
         weekly_hours=course_data.get("weekly_hours", 0),
         language=course_data.get("language", ""),
-        status=course_data.get("status", 0)
+        status=_get_or_insert_status(session, course_data.get("status", ""))
     )  # type: ignore
     # Add the course to the session and flush (save to DB) to get an ID assigned, which is needed for linking events
     session.add(course)
     session.flush()
     if course.id is None:
         raise RuntimeError("Could not get course id after add and flush to database")
+    
+    # Link staff members to the course, inserting them if they do not already exist
+    for staff_name in course_data.get("staff", []):
+        staff_id = _get_or_insert_staff(session, staff_name)
+        _link_course_staff(session, course.id, staff_id)
+
     return course.id, True
 
 
@@ -196,6 +312,14 @@ def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, 
     session.flush()
     if event.id is None:
         raise RuntimeError("Could not get event id after add and flush to database")
+
+    # Handle location -> room_parser.py
+
+    # Link staff members to the event, inserting them if they do not already exist
+    for staff_name in event_data.get("staff", []):
+        staff_id = _get_or_insert_staff(session, staff_name)
+        _link_event_staff(session, event.id, staff_id)
+
     return event.id, True
 
 

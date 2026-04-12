@@ -105,14 +105,16 @@ def parseCourse(html_content: str) -> CourseType | None:
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
     events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name)
+    staff = [s.strip() for s in re.split(r"[,;]", values["staff"]) if s.strip()]
     return {
         "name": name,
         "number": number,
-        "staff": values["staff"].split(", ") if values["staff"] else [],
+        "staff": staff,
         "type": values["type"],
         "weekly_hours": int(values["weekly_hours"]) if values["weekly_hours"].isdigit() else 0,
         "language": values["language"],
         "events": events,
+        "status": "almaweb"
     }
 
 
