@@ -115,7 +115,7 @@ class Event(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     number: str = ""
     name: str = ""
-    type: int = Field(foreign_key="eventtypes.id")
+    type: int = Field(foreign_key="eventtype.id")
     start_time: time
     end_time: time
     weekday: int | None = None
