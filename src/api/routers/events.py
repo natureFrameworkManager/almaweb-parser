@@ -11,17 +11,17 @@ from datetime import date, time
 import re
 
 from database.database import SessionDep
-from database.model import CourseEvent, Course, Module
+from database.model import Event, Course, Module
 from schemas.events import EventDetailResponseModel, EventListResponseModel
 from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/events", tags=["Events"])
-EventField = Enum("EventField", {f: f for f in CourseEvent.model_fields})
+EventField = Enum("EventField", {f: f for f in Event.model_fields})
 
 
 def _attach_event_relations(
     session: SessionDep,
-    events: Sequence[CourseEvent],
+    events: Sequence[Event],
     items: list[dict[str, Any]],
     include_parent: bool,
 ) -> list[dict[str, Any]]:
@@ -97,32 +97,32 @@ def get_events(
     Retrieve a list of all events
     """
     # Base query: select only CourseEvent rows
-    query = select(CourseEvent)
+    query = select(Event)
 
     # Apply filters based on query parameters
     if date:
-        query = query.where(CourseEvent.event_date == parse_iso_date(date, "date"))
+        query = query.where(Event.event_date == parse_iso_date(date, "date"))
     if date_from:
-        query = query.where(CourseEvent.event_date >= parse_iso_date(date_from, "date_from"))
+        query = query.where(Event.event_date >= parse_iso_date(date_from, "date_from"))
     if date_to:
-        query = query.where(CourseEvent.event_date <= parse_iso_date(date_to, "date_to"))
+        query = query.where(Event.event_date <= parse_iso_date(date_to, "date_to"))
     if weekday:
         sqlite_weekdays = [str((day + 1) % 7) for day in weekday]
-        query = query.where(func.strftime("%w", CourseEvent.event_date).in_(sqlite_weekdays))
+        query = query.where(func.strftime("%w", Event.event_date).in_(sqlite_weekdays))
     if start_time:
         parsed_start_time = parse_hhmm_time(start_time, "start_time")
-        query = query.where(CourseEvent.start_time >= parsed_start_time)
+        query = query.where(Event.start_time >= parsed_start_time)
     if end_time:
         parsed_end_time = parse_hhmm_time(end_time, "end_time")
-        query = query.where(CourseEvent.end_time <= parsed_end_time)
+        query = query.where(Event.end_time <= parsed_end_time)
     if time_overlap:
         parsed_overlap_time = parse_hhmm_time(time_overlap, "time_overlap")
-        query = query.where(CourseEvent.start_time <= parsed_overlap_time)
-        query = query.where(CourseEvent.end_time >= parsed_overlap_time)
+        query = query.where(Event.start_time <= parsed_overlap_time)
+        query = query.where(Event.end_time >= parsed_overlap_time)
     if location:
-        query = query.where(CourseEvent.location.ilike(f"%{location}%")) # type: ignore
+        query = query.where(Event.location.ilike(f"%{location}%")) # type: ignore
     if course_id is not None:
-        query = query.where(CourseEvent.course_id == course_id)
+        query = query.where(Event.course_id == course_id)
     if course_name:
         query = query.join(Course).where(Course.name.ilike(f"%{course_name}%")) # type: ignore
     if course_number:
@@ -163,7 +163,7 @@ def get_events(
             for field in value.value.split(",")
             if field.strip()
         }
-        valid_fields = set(CourseEvent.model_fields.keys())
+        valid_fields = set(Event.model_fields.keys())
         invalid_fields = sorted(requested_fields - valid_fields)
 
         if invalid_fields:
@@ -301,7 +301,7 @@ def get_event(
 
     Returns **404** if the event does not exist.
     """
-    event = session.get(CourseEvent, event_id)
+    event = session.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
@@ -314,7 +314,7 @@ def get_event(
             for field in value.value.split(",")
             if field.strip()
         }
-        valid_fields = set(CourseEvent.model_fields.keys())
+        valid_fields = set(Event.model_fields.keys())
         invalid_fields = sorted(requested_fields - valid_fields)
 
         if invalid_fields:

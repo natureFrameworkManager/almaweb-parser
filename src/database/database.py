@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from .model import Course, CourseEvent, Module
+from .model import Course, Event, Module
 
 
 DATABASE_URL = "sqlite:///database.db"
@@ -99,21 +99,21 @@ def _insert_event_if_new(session: Session, event_data: dict, course_id: int) -> 
 
     # Check if an event of this course with the same number, date, time, location, and staff already exists
     already_exists = session.exec(
-        select(CourseEvent)
-        .where(CourseEvent.course_id == course_id)
-        .where(CourseEvent.number == event_data["number"])
-        .where(CourseEvent.event_date == event_data["event_date"])
-        .where(CourseEvent.start_time == event_data["start_time"])
-        .where(CourseEvent.end_time == event_data["end_time"])
-        .where(CourseEvent.location == event_data["location"])
-        .where(CourseEvent.staff == event_data["staff"])
+        select(Event)
+        .where(Event.course_id == course_id)
+        .where(Event.number == event_data["number"])
+        .where(Event.event_date == event_data["event_date"])
+        .where(Event.start_time == event_data["start_time"])
+        .where(Event.end_time == event_data["end_time"])
+        .where(Event.location == event_data["location"])
+        .where(Event.staff == event_data["staff"])
     ).first()
 
     if already_exists:
         return False
 
     # Unpacking of event_data into CourseEvent constructor, adding course_id for the foreign key relationship
-    session.add(CourseEvent(**event_data, course_id=course_id))
+    session.add(Event(**event_data, course_id=course_id))
     return True
 
 

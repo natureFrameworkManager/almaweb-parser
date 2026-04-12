@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
-from database.model import Course, CourseEvent, Module
+from database.model import Course, Event, Module
 from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
 from .shared import export_parameters
 from .shared import paging_parameters
@@ -59,9 +59,9 @@ def _attach_module_relations(
         courses_by_module_id[course.module_id].append(course)
 
     course_ids = [course.id for course in courses if course.id is not None]
-    events_by_course_id: dict[int, list[CourseEvent]] = defaultdict(list)
+    events_by_course_id: dict[int, list[Event]] = defaultdict(list)
     if course_ids:
-        events = session.exec(select(CourseEvent).where(CourseEvent.course_id.in_(course_ids))).all() # type: ignore
+        events = session.exec(select(Event).where(Event.course_id.in_(course_ids))).all() # type: ignore
         for event in events:
             events_by_course_id[event.course_id].append(event)
 
@@ -297,7 +297,7 @@ def get_module(
 
     return module
 
-@router.get("/{module_id}/courses", summary="Courses for a module")
+@router.get("/{module_id}/courses", summary="Courses linked to a module")
 def get_module_courses(
     module_id: int,
     session: SessionDep,
@@ -312,7 +312,7 @@ def get_module_courses(
     """
     pass
 
-@router.get("/{module_id}/events", summary="Events for a module")
+@router.get("/{module_id}/events", summary="Events linked to a module")
 def get_module_events(
     module_id: int,
     session: SessionDep,
@@ -330,7 +330,7 @@ def get_module_events(
     """
     pass
 
-@router.get("/{module_id}/staff", summary="Staff for a module")
+@router.get("/{module_id}/staff", summary="Staff linked to a module")
 def get_module_staff(
     module_id: int,
     session: SessionDep,
@@ -345,7 +345,7 @@ def get_module_staff(
     """
     pass
 
-@router.get("/{module_id}/degrees", summary="Degrees for a module")
+@router.get("/{module_id}/degrees", summary="Degrees linked to a module")
 def get_module_degrees(
     module_id: int,
     session: SessionDep,
@@ -360,9 +360,8 @@ def get_module_degrees(
     """
     pass
 
-@router.get("/distinct/{field}", summary="Get distinct values for a module field")
+@router.get("/distinct/{field}", summary="Distinct values for a module field")
 def get_distinct_module_field(
-    module_id: int,
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
     field: ModuleField | None, # type: ignore

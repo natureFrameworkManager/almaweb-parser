@@ -3,6 +3,61 @@ from datetime import time, date
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
+class ModuleStaffLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Module and Staff.
+    """
+
+    module_id: int = Field(foreign_key="module.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+
+class ModuleSemesterLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Module and Semesters.
+    """
+
+    module_id: int = Field(foreign_key="module.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+
+class ModuleCourseLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Module and Course.
+    """
+
+    module_id: int = Field(foreign_key="module.id", primary_key=True)
+    course_id: int = Field(foreign_key="course.id", primary_key=True)
+
+class ModuleDegreeLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Module and Degree.
+    """
+
+    module_id: int = Field(foreign_key="module.id", primary_key=True)
+    degree_id: int = Field(foreign_key="degree.id", primary_key=True)
+
+class CourseEventLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Course and Event.
+    """
+
+    course_id: int = Field(foreign_key="course.id", primary_key=True)
+    event_id: int = Field(foreign_key="event.id", primary_key=True)
+
+class CourseStaffLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Course and Staff.
+    """
+
+    course_id: int = Field(foreign_key="course.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+
+class EventStaffLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Event and Staff.
+    """
+
+    event_id: int = Field(foreign_key="event.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
 
 class Module(SQLModel, table=True):
     """
@@ -14,19 +69,20 @@ class Module(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True) # Primary key, auto-incremented by the database
     name: str
     number: str = Field(index=True)
-    path: list[str] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
-    responsible_person: str = ""
+    language: str = ""
     duration_semesters: int = 0
     credits: float = 0.0
-    start_semester: str = ""
     frequency: str = ""
     goals: str = ""
     content: str = ""
     exam_prerequisites: str = ""
     prerequisites: dict[str, str] = Field(sa_column=Column(JSON))
 
-    courses: list["Course"] = Relationship(back_populates="module")
-
+    path: list[str] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
+    responsible_persons: list["Staff"] = Relationship(back_populates="modules", link_model=ModuleStaffLink)
+    start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
+    degrees: list["Degree"] = Relationship(back_populates="modules", link_model=ModuleDegreeLink)
+    courses: list["Course"] = Relationship(back_populates="module", link_model=ModuleCourseLink)
 
 class Course(SQLModel, table=True):
     """
@@ -39,18 +95,17 @@ class Course(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
     number: str = ""
-    staff: list[str] = Field(sa_column=Column(JSON))
     type: str = ""
     weekly_hours: int = 0
     language: str = ""
+    status: int = Field(foreign_key="status.id")
 
-    module_id: int = Field(foreign_key="module.id", index=True)
+    staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
+    modules: list["Module"] = Relationship(back_populates="courses", link_model=ModuleCourseLink)
+    events: list["Event"] = Relationship(back_populates="course", link_model=CourseEventLink)
 
-    module: "Module" = Relationship(back_populates="courses")
-    events: list["CourseEvent"] = Relationship(back_populates="course")
 
-
-class CourseEvent(SQLModel, table=True):
+class Event(SQLModel, table=True):
     """
     A single scheduled occurrence of a :class:`Course`.
 
@@ -58,11 +113,105 @@ class CourseEvent(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    course_id: int = Field(foreign_key="course.id", index=True)
     number: str = ""
-    event_date: date
+    name: str = ""
+    type: int = Field(foreign_key="eventtypes.id")
     start_time: time
     end_time: time
-    location: str = ""
-    staff: list[str] = Field(sa_column=Column(JSON)) 
-    course: "Course" = Relationship(back_populates="events")
+    weekday: int | None = None
+    event_date: date | None = None
+    location: int = Field(foreign_key="location.id")
+
+    staff: list["Staff"] = Relationship(back_populates="events", link_model=EventStaffLink)
+    courses: list["Course"] = Relationship(back_populates="events", link_model=CourseEventLink)
+
+class Location(SQLModel, table=True):
+    """
+    A location (room) where events take place.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+    external_id: str = "" # The original room identifier as used in the source data, e.g. "Hörsaal 1" or "Online"
+    description: str = "" # Additional information about the location, e.g. "Hörsaal 1 im Hauptgebäude" or "Online-Veranstaltung über Zoom"
+    type: str = "" # The type of location, e.g. "Hörsaal", "Seminarraum", "Online", etc.
+    seats: int | None = None # The number of seats available in the location, if known
+    size: float | None = None # The size of the location in square meters, if known
+    accessibility: str = "" # Information about the accessibility of the location, e.g. "barrierefrei", "nicht barrierefrei", etc.
+    building: int | None = Field(foreign_key="building.id") # The building where the location is situated, if known
+
+    events: list["Event"] = Relationship(back_populates="location")
+
+class Building(SQLModel, table=True):
+    """
+    A building where locations (rooms) are situated.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+    short_name: str = "" # A short name or code for the building, e.g. "Hauptgebäude", "Informatik-Gebäude", etc.
+    address: str = "" # The address of the building, e.g. "Musterstraße 1, 12345 Musterstadt"
+
+    locations: list["Location"] = Relationship(back_populates="building")
+
+class Degree(SQLModel, table=True):
+    """
+    A degree program, e.g. "Informatik (Bachelor of Science)", "Informatik (Master of Science)", etc.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+    faculty: int = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
+
+    modules: list["Module"] = Relationship(back_populates="degrees", link_model=ModuleDegreeLink)
+
+class Faculty(SQLModel, table=True):
+    """
+    A faculty within the university, e.g. "Fakultät für Informatik", "Fakultät für Mathematik", etc.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+    prefix: int | None = None # A short prefix or code for the faculty, e.g. "INF", "MATH", etc.
+
+    degrees: list["Degree"] = Relationship(back_populates="faculty")
+
+class Semester(SQLModel, table=True):
+    """
+    A semester, e.g. "SS 2024", "WS 2024/25", etc.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+    year: int = 0
+    term: str = "" # "SoSe" for summer semester, "WiSe" for winter semester, etc.
+
+    modules: list["Module"] = Relationship(back_populates="start_semester", link_model=ModuleSemesterLink)
+
+class Staff(SQLModel, table=True):
+    """
+    A staff member involved in teaching or organizing courses and events.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+
+    modules: list["Module"] = Relationship(back_populates="responsible_persons", link_model=ModuleStaffLink)
+    courses: list["Course"] = Relationship(back_populates="staff", link_model=CourseStaffLink)
+    events: list["Event"] = Relationship(back_populates="staff", link_model=EventStaffLink)
+
+class Status(SQLModel, table=True):
+    """
+    Status of a course, e.g. "offered", "not offered", "planned", etc.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""
+
+class EventType(SQLModel, table=True):
+    """
+    Type of an event, e.g. "lecture", "exercise", "lab", etc.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = ""

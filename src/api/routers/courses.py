@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
-from database.model import Course, CourseEvent, Module
+from database.model import Course, Event, Module
 from schemas.courses import CourseDetailResponseModel, CourseListResponseModel
 from .shared import export_parameters, paging_parameters
 
@@ -35,9 +35,9 @@ def _attach_course_relations(
         modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
         modules_by_id = {module.id: module for module in modules if module.id is not None}
 
-    events_by_course_id: dict[int, list[CourseEvent]] = defaultdict(list)
+    events_by_course_id: dict[int, list[Event]] = defaultdict(list)
     if include_children and course_ids:
-        events = session.exec(select(CourseEvent).where(CourseEvent.course_id.in_(course_ids))).all() # type: ignore
+        events = session.exec(select(Event).where(Event.course_id.in_(course_ids))).all() # type: ignore
         for event in events:
             events_by_course_id[event.course_id].append(event)
 
@@ -93,7 +93,7 @@ def get_courses(
     if staff:
         query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
     if has_events is not None:
-        events_exist = select(CourseEvent.id).where(CourseEvent.course_id == Course.id).exists()
+        events_exist = select(Event.id).where(Event.course_id == Course.id).exists()
         query = query.where(events_exist if has_events else ~events_exist)
     if weekly_hours_min is not None:
         query = query.where(Course.weekly_hours >= weekly_hours_min)

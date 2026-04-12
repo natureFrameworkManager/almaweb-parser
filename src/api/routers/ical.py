@@ -7,7 +7,7 @@ from sqlmodel import select
 import re
 
 from database.database import SessionDep
-from database.model import CourseEvent, Course, Module
+from database.model import Event, Course, Module
 
 router = APIRouter(prefix="/ical", tags=["iCal"])
 
@@ -31,26 +31,26 @@ def export_ical(
     Generate an iCalendar (.ics) file of the matching events.
     """
     
-    query = select(CourseEvent)
+    query = select(Event)
 
     if date_from:
-        query = query.where(CourseEvent.event_date >= date_from)
+        query = query.where(Event.event_date >= date_from)
     if date_to:
-        query = query.where(CourseEvent.event_date <= date_to)
+        query = query.where(Event.event_date <= date_to)
     if start_time:
         match = re.match(r"^(\d{2}):(\d{2})$", start_time)
         if not match:
             raise HTTPException(status_code=400, detail="Invalid start_time format. Expected HH:MM.")
-        query = query.where(CourseEvent.start_time >= time(int(match.group(1)), int(match.group(2))))
+        query = query.where(Event.start_time >= time(int(match.group(1)), int(match.group(2))))
     if end_time:
         match = re.match(r"^(\d{2}):(\d{2})$", end_time)
         if not match:
             raise HTTPException(status_code=400, detail="Invalid end_time format. Expected HH:MM.")
-        query = query.where(CourseEvent.end_time <= time(int(match.group(1)), int(match.group(2))))
+        query = query.where(Event.end_time <= time(int(match.group(1)), int(match.group(2))))
     if location:
-        query = query.where(CourseEvent.location.ilike(f"%{location}%"))  # type: ignore
+        query = query.where(Event.location.ilike(f"%{location}%"))  # type: ignore
     if course_id:
-        query = query.where(CourseEvent.course_id == course_id)
+        query = query.where(Event.course_id == course_id)
     if course_name:
         query = query.join(Course).where(Course.name.ilike(f"%{course_name}%"))  # type: ignore
     if course_number:
