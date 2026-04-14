@@ -6,7 +6,7 @@ from sqlalchemy import or_
 
 from database.database import SessionDep
 from database.model import Staff
-from .shared import export_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
@@ -52,7 +52,7 @@ def get_staff_details(
 def get_staff_events(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     staff_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore

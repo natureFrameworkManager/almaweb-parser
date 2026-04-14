@@ -11,8 +11,7 @@ from sqlmodel import select
 from database.database import SessionDep
 from database.model import Course, Event, Module
 from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
-from .shared import export_parameters
-from .shared import paging_parameters
+from .shared import export_event_parameters, export_parameters, paging_parameters
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
@@ -319,7 +318,7 @@ def get_module_events(
     module_id: int,
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    exports: Annotated[dict, Depends(export_parameters)],
+    exports: Annotated[dict, Depends(export_event_parameters)],
     date_from: str | None = Query(None, description="Filter events that start on or after this ISO 8601 datetime."),
     date_to: str | None = Query(None, description="Filter events that end on or before this ISO 8601 datetime."),
     weekday: list[int] | None = Query(None, description="Filter events that occur on these weekdays (0=Monday, 6=Sunday). Repeatable for multiple days."),

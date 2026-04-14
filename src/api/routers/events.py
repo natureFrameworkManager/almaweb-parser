@@ -13,7 +13,7 @@ import re
 from database.database import SessionDep
 from database.model import Event, Course, Module
 from schemas.events import EventDetailResponseModel, EventListResponseModel
-from .shared import export_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters
 
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in Event.model_fields})
@@ -73,6 +73,7 @@ def parse_hhmm_time(value: str, param_name: str) -> time:
 @router.get("", summary="List all Events", response_model=EventListResponseModel)
 def get_events(
     session: SessionDep,
+    exports: Annotated[dict, Depends(export_event_parameters)],
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
     date_from: str | None = Query(None, description="Start date for range filtering (YYYY-MM-DD, inclusive)"),
     date_to: str | None = Query(None, description="End date for range filtering (YYYY-MM-DD, inclusive)"),
@@ -218,7 +219,7 @@ def get_events(
 def get_todays_events(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
@@ -232,7 +233,7 @@ def get_todays_events(
 def get_tomorrows_events(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
@@ -246,7 +247,7 @@ def get_tomorrows_events(
 def get_weeks_events(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
@@ -262,7 +263,7 @@ def get_weeks_events(
 def get_events_by_date(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
@@ -276,7 +277,7 @@ def get_events_by_date(
 def get_events_by_week(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
@@ -292,7 +293,7 @@ def get_events_by_week(
 def get_events_by_month(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore

@@ -1,8 +1,25 @@
+from enum import Enum
+from typing import Annotated
 from fastapi import Query
 
+class ExportFormats(str, Enum):
+    json = "json"
+    csv = "csv"
+
+class EventExportFormats(str, Enum):
+    json = "json"
+    csv = "csv"
+    ical = "ical"
 
 def export_parameters(
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv', 'ical')."),
+    format: ExportFormats | None = Query(None, description="Response format."),
+):
+    return {
+        "format": format,
+        }
+
+def export_event_parameters(
+    format: EventExportFormats | None = Query(None, description="Response format."),
     ical_title_format: str | None = Query(None, description="Custom title format for iCal output, using placeholders like {name} and {number}. Ignored if format is not 'ical'."),
     ical_location_format: str | None = Query(None, description="Custom location format for iCal output, using placeholders like {name} and {number}. Ignored if format is not 'ical'."),
     ical_description_format: str | None = Query(None, description="Custom description format for iCal output, using placeholders like {name} and {number}. Ignored if format is not 'ical'."),

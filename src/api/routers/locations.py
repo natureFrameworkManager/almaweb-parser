@@ -6,7 +6,7 @@ from sqlalchemy import or_
 
 from database.database import SessionDep
 from database.model import Location, Building, Event
-from .shared import export_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"])
 
@@ -67,7 +67,7 @@ def get_location_details(
 def get_location_events(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
+    export: Annotated[dict, Depends(export_event_parameters)],
     location_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'staff'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore

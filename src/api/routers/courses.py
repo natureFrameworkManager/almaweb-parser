@@ -11,7 +11,7 @@ from sqlmodel import select
 from database.database import SessionDep
 from database.model import Course, Event, Module
 from schemas.courses import CourseDetailResponseModel, CourseListResponseModel
-from .shared import export_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
@@ -271,7 +271,7 @@ def get_course_events(
     course_id: int,
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
-    exports: Annotated[dict, Depends(export_parameters)],
+    exports: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
