@@ -8,7 +8,7 @@ from sqlmodel import select
 from database.database import SessionDep
 from database.model import Module
 from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
-from .shared import export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters
+from .shared import export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
@@ -82,6 +82,7 @@ def _attach_module_relations(
 @router.get("", summary="List all modules", response_model=ModuleListResponseModel)
 def get_modules(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Module))],
     sorting: Annotated[dict, Depends(sort_parameters(Module))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_parameters)],
@@ -109,7 +110,6 @@ def get_modules(
     updated_since: str | None = Query(None, description="Filter modules that have been updated since the given ISO 8601 datetime string."),
     updated_before: str | None = Query(None, description="Filter modules that have been updated before the given ISO 8601 datetime string."),
     include: list[IncludeOption] | None = Query(None, description="Related data to include: courses, events, staff. Repeatable for multiple relations."),
-    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """
     Retrieve a list of all modules
@@ -188,10 +188,10 @@ def get_modules(
 
     # include_related = include_children  # Modules have no parent, so include_parent has no effect here.
 
-    if fields:
+    if fielding["fields"]:
         requested_fields = {
             field.strip()
-            for value in fields
+            for value in fielding["fields"]
             for field in value.value.split(",")
             if field.strip()
         }

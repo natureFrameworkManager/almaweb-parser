@@ -50,6 +50,24 @@ def sort_parameters(model_class: type):
 
     return _sort_parameters
 
+def fields_parameters(model_class: type):
+    """
+    Build a FastAPI dependency for generic field selection.
+
+    Returns a dependency function with:
+    - fields: list of model columns to include in the response
+    """
+    FieldEnum = model_field_enum(model_class, f"{model_class.__name__}Field")
+
+    def _fields_parameters(
+        fields: list[FieldEnum] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
+    ):
+        return {
+            "fields": fields,
+        }
+
+    return _fields_parameters
+
 def export_parameters(
     format: ExportFormats | None = Query(None, description="Response format."),
 ):
