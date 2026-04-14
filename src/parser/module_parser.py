@@ -71,7 +71,11 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                             from database.database import insert_module_graph
                         except ModuleNotFoundError:
                             from src.database.database import insert_module_graph
-                        insert_module_graph(parsed)
+                        try:
+                            insert_module_graph(parsed)
+                        except Exception as e:
+                            print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
+                            raise
 
             if _cancelled(cancel_event):
                 for future in pending:
