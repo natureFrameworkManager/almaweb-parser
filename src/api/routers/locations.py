@@ -179,13 +179,15 @@ def get_buildings(
 @room_router.get("/{building_id}", summary="Get building details")
 def get_building_details(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Building))],
     export: Annotated[dict, Depends(export_parameters)],
     building_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'locations'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific building by its ID."""
-    return session.exec(select(Building).where(Building.id == building_id)).first()
+    query = select(Building).where(Building.id == building_id)
+    items = filter_query(session, query, fielding, Building)
+    return items[0] if items else None
 
 @room_router.get("/{building_id}/locations", summary="List locations for a building")
 def get_building_locations(

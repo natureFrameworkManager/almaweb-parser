@@ -16,6 +16,7 @@ def get_semesters(
     sorting: Annotated[dict, Depends(sort_parameters(Semester))],
     fielding: Annotated[dict, Depends(fields_parameters(Semester))],
     paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
     name: list[str] | None = Query(None, description="Semester name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     years: list[int] | None = Query(None, description="Year values to filter semesters that occur in specific years (repeatable; OR within this filter)."),
     terms: list[str] | None = Query(None, description="Term values to filter semesters that occur in specific terms (e.g., 'Spring', 'Fall'; repeatable; OR within this filter)."),
