@@ -1,6 +1,6 @@
 from datetime import time, date
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, Text
 from sqlmodel import Field, Relationship, SQLModel
 
 class ModuleStaffLink(SQLModel, table=True):
@@ -67,17 +67,17 @@ class Module(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True) # Primary key, auto-incremented by the database
-    name: str
-    number: str = Field(index=True)
-    language: str = ""
+    name: str = Field(max_length=255)
+    number: str = Field(index=True, max_length=255)
+    language: str = Field(default="", max_length=255)
     duration_semesters: int = 0
     credits: float = 0.0
-    frequency: str = ""
-    goals: str = ""
-    content: str = ""
-    exam_prerequisites: str = ""
+    frequency: str = Field(default="", max_length=255)
+    goals: str = Field(default="", sa_column=Column(Text, nullable=False))
+    content: str = Field(default="", sa_column=Column(Text, nullable=False))
+    exam_prerequisites: str = Field(default="", sa_column=Column(Text, nullable=False))
     prerequisites: dict[str, str] = Field(sa_column=Column(JSON))
-    faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the module belongs, if known
+    faculty_id: int | None = Field(default=None, foreign_key="faculty.id") # The faculty to which the module belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="modules")
     path: list[str] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
@@ -95,13 +95,13 @@ class Course(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
-    number: str = ""
-    type: int | None = Field(foreign_key="eventtype.id") # TODO: Remove None
+    name: str = Field(default="", max_length=255)
+    number: str = Field(default="", max_length=255)
+    type: int | None = Field(default=None, foreign_key="eventtype.id") # TODO: Remove None
     weekday: int | None = None # 1=Monday, 2=Tuesday, ..., 7=Sunday. This is not always available in the source data, so it can be None.
     weekly_hours: int = 0
-    language: str = ""
-    status: int | None = Field(foreign_key="status.id") # TODO: Remove None
+    language: str = Field(default="", max_length=255)
+    status: int | None = Field(default=None, foreign_key="status.id") # TODO: Remove None
 
     staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
     modules: list["Module"] = Relationship(back_populates="courses", link_model=ModuleCourseLink)
@@ -116,12 +116,12 @@ class Event(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    number: str = ""
-    name: str = ""
+    number: str = Field(default="", max_length=255)
+    name: str = Field(default="", max_length=255)
     start_time: time
     end_time: time
     event_date: date
-    location_id: int | None = Field(foreign_key="location.id") # TODO: Remove None
+    location_id: int | None = Field(default=None, foreign_key="location.id") # TODO: Remove None
 
     location: "Location" = Relationship(back_populates="events")
     staff: list["Staff"] = Relationship(back_populates="events", link_model=EventStaffLink)
@@ -133,14 +133,14 @@ class Location(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
-    external_id: str = "" # The original room identifier as used in the source data, e.g. "Hörsaal 1" or "Online"
-    description: str = "" # Additional information about the location, e.g. "Hörsaal 1 im Hauptgebäude" or "Online-Veranstaltung über Zoom"
-    type: str = "" # The type of location, e.g. "Hörsaal", "Seminarraum", "Online", etc.
+    name: str = Field(default="", max_length=255)
+    external_id: str = Field(default="", max_length=255) # The original room identifier as used in the source data, e.g. "Hörsaal 1" or "Online"
+    description: str = Field(default="", sa_column=Column(Text, nullable=False)) # Additional information about the location, e.g. "Hörsaal 1 im Hauptgebäude" or "Online-Veranstaltung über Zoom"
+    type: str = Field(default="", max_length=255) # The type of location, e.g. "Hörsaal", "Seminarraum", "Online", etc.
     seats: int | None = None # The number of seats available in the location, if known
     size: float | None = None # The size of the location in square meters, if known
-    accessibility: str = "" # Information about the accessibility of the location, e.g. "barrierefrei", "nicht barrierefrei", etc.
-    building_id: int | None = Field(foreign_key="building.id") # The building where the location is situated, if known
+    accessibility: str = Field(default="", sa_column=Column(Text, nullable=False)) # Information about the accessibility of the location, e.g. "barrierefrei", "nicht barrierefrei", etc.
+    building_id: int | None = Field(default=None, foreign_key="building.id") # The building where the location is situated, if known
 
     building: "Building" = Relationship(back_populates="locations")
     events: list["Event"] = Relationship(back_populates="location")
@@ -151,9 +151,9 @@ class Building(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
-    short_name: str = "" # A short name or code for the building, e.g. "Hauptgebäude", "Informatik-Gebäude", etc.
-    address: str = "" # The address of the building, e.g. "Musterstraße 1, 12345 Musterstadt"
+    name: str = Field(default="", max_length=255)
+    short_name: str = Field(default="", max_length=255) # A short name or code for the building, e.g. "Hauptgebäude", "Informatik-Gebäude", etc.
+    address: str = Field(default="", max_length=255) # The address of the building, e.g. "Musterstraße 1, 12345 Musterstadt"
 
     locations: list["Location"] = Relationship(back_populates="building")
 
@@ -163,8 +163,8 @@ class Degree(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
-    faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
+    name: str = Field(default="", max_length=255)
+    faculty_id: int | None = Field(default=None, foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="degrees")
     modules: list["Module"] = Relationship(back_populates="degrees", link_model=ModuleDegreeLink)
@@ -175,7 +175,7 @@ class Faculty(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
+    name: str = Field(default="", max_length=255)
     prefix: int | None = None # A short prefix or code for the faculty, e.g. "INF", "MATH", etc.
 
     modules: list["Module"] = Relationship(back_populates="faculty")
@@ -187,9 +187,9 @@ class Semester(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
+    name: str = Field(default="", max_length=255)
     year: int = 0
-    term: str = "" # "SoSe" for summer semester, "WiSe" for winter semester, etc.
+    term: str = Field(default="", max_length=255) # "SoSe" for summer semester, "WiSe" for winter semester, etc.
 
     modules: list["Module"] = Relationship(back_populates="start_semester", link_model=ModuleSemesterLink)
 
@@ -199,7 +199,7 @@ class Staff(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
+    name: str = Field(default="", max_length=255)
 
     modules: list["Module"] = Relationship(back_populates="responsible_persons", link_model=ModuleStaffLink)
     courses: list["Course"] = Relationship(back_populates="staff", link_model=CourseStaffLink)
@@ -211,7 +211,7 @@ class Status(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
+    name: str = Field(default="", max_length=255)
 
 class EventType(SQLModel, table=True):
     """
@@ -219,4 +219,4 @@ class EventType(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = ""
+    name: str = Field(default="", max_length=255)

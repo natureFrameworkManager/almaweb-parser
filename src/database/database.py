@@ -14,7 +14,8 @@ try:
 except ModuleNotFoundError:
     from src.database.model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty
 
-DATABASE_URL = "sqlite:///database.db"
+#DATABASE_URL = "sqlite:///database.db"
+DATABASE_URL = "mariadb+pymysql://root:notSecureChangeMe@localhost:3306/almaweb_parser"
 
 engine = create_engine(DATABASE_URL, echo=False)
 
