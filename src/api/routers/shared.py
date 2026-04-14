@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Annotated
 from fastapi import Query
+from sqlmodel import func, select
+from database.database import SessionDep
 
 class ExportFormats(str, Enum):
     json = "json"
@@ -42,3 +44,24 @@ def paging_parameters(
         "page": page,
         "page_size": page_size,
     }
+
+def page_query(session: SessionDep, query, paging: dict):
+    page = paging.get("page") or 1
+    page_size = paging.get("page_size")
+    
+    count = session.exec(select(func.count()).select_from(query.subquery())).one()
+    if page_size is not None:
+        offset = (page - 1) * page_size
+        return {
+            "count": count,
+            "page": page,
+            "limit": page_size,
+            "total_pages": (count + page_size - 1) // page_size,
+        }, query.offset(offset).limit(page_size)
+    else:
+        return {
+        "count": count,
+        "page": 1,
+        "limit": count,
+        "total_pages": 1,
+        }, query

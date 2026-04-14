@@ -6,7 +6,7 @@ from sqlalchemy import or_
 
 from database.database import SessionDep
 from database.model import Staff
-from .shared import export_parameters, export_event_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters, page_query
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
@@ -34,7 +34,14 @@ def get_staff(
         query = query.where(or_(*[Staff.courses.any(Course.id == value) for value in courses])) # type: ignore
     if modules:
         query = query.where(or_(*[Staff.modules.any(Module.id == value) for value in modules])) # type: ignore
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": session.exec(query).all(),
+    }
 
 @router.get("/{staff_id}", summary="Get staff details")
 def get_staff_details(
