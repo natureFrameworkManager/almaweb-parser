@@ -143,107 +143,15 @@ def get_modules(
     if credits_max is not None:
         query = query.where(Module.credits <= credits_max)
 
-    sort_field = sorting.get("sort")
-    if sort_field:
-        sort_column = getattr(Module, sort_field, None)
-        if sort_column is not None:
-            if sorting.get("order") == "desc":
-                query = query.order_by(sort_column.desc())
-            else:
-                query = query.order_by(sort_column.asc())
-    # if path_search:
-    #     # Normalize/Join JSON array like ["A","B"] into "A > B" for path substring search.
-    #     normalized_path = func.replace(
-    #         func.replace(
-    #             func.replace(
-    #                 func.replace(func.json_extract(Module.path, "$"), "[", ""),
-    #                 "]",
-    #                 "",
-    #             ),
-    #             '"',
-    #             "",
-    #         ),
-    #         ",",
-    #         " > ",
-    #     )
-    #     query = query.where(func.lower(normalized_path).ilike(f"%{path_search.lower()}%"))
-
-    # Count all filtered rows before pagination.
-    count_query = select(func.count()).select_from(query.distinct().subquery())
-    total_count = session.exec(count_query).one()
-
-    pagination_enabled = paging["page"] is not None or paging["page_size"] is not None
-    total_pages: int | None = None
-    response_page: int = 1
-    response_limit: int | None = None
-
-    if pagination_enabled:
-        response_page = paging["page"] if paging["page"] is not None else 1
-        response_limit = paging["page_size"] if paging["page_size"] is not None else 50
-        offset = (response_page - 1) * response_limit
-        modules = session.exec(query.distinct().offset(offset).limit(response_limit)).all()
-        total_pages = (total_count + response_limit - 1) // response_limit if total_count > 0 else 0
-    else:
-        modules = session.exec(query.distinct()).all()
-
-    # include_related = include_children  # Modules have no parent, so include_parent has no effect here.
-
-    if fielding["fields"]:
-        requested_fields = {
-            field.strip()
-            for value in fielding["fields"]
-            for field in value.value.split(",")
-            if field.strip()
-        }
-        valid_fields = set(Module.model_fields.keys())
-        invalid_fields = sorted(requested_fields - valid_fields)
-
-        if invalid_fields:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": "Invalid fields requested",
-                    "invalid_fields": invalid_fields,
-                    "valid_fields": sorted(valid_fields),
-                },
-            )
-
-        selected_fields = sorted(requested_fields)
-        items = [
-            {
-                field: module.model_dump().get(field)
-                for field in selected_fields
-            }
-            for module in modules
-        ]
-        # if include_related:
-        #     items = _attach_module_relations(session, modules, items)
-
-        return {
-            "count": total_count,
-            "page": response_page,
-            "limit": response_limit,
-            "total_pages": total_pages,
-            "items": items,
-        }
-
-    # if include_related:
-    #     items = [module.model_dump() for module in modules]
-    #     items = _attach_module_relations(session, modules, items, include_children=include_children)
-    #     return {
-    #         "count": total_count,
-    #         "page": response_page,
-    #         "limit": response_limit,
-    #         "total_pages": total_pages,
-    #         "items": items,
-    #     }
-
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Module)
+    items = filter_query(session, query, fielding, Module)
     return {
-        "count": total_count,
-        "page": response_page,
-        "limit": response_limit,
-        "total_pages": total_pages,
-        "items": modules,
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
     }
 
 
@@ -251,9 +159,9 @@ def get_modules(
 def get_module(
     module_id: int,
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Module))],
     exports: Annotated[dict, Depends(export_parameters)],
     include: list[IncludeOption] | None = Query(None, description="Related data to include: courses, events, staff. Repeatable for multiple relations."),
-    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """
     Retrieve a single module by its ID.
@@ -263,44 +171,9 @@ def get_module(
     module = session.get(Module, module_id)
     if module is None:
         raise HTTPException(status_code=404, detail="Module not found")
-
-    # include_related = include_children  # Modules have no parent, so include_parent has no effect here.
-
-    if fields:
-        requested_fields = {
-            field.strip()
-            for value in fields
-            for field in value.value.split(",")
-            if field.strip()
-        }
-        valid_fields = set(Module.model_fields.keys())
-        invalid_fields = sorted(requested_fields - valid_fields)
-
-        if invalid_fields:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": "Invalid fields requested",
-                    "invalid_fields": invalid_fields,
-                    "valid_fields": sorted(valid_fields),
-                },
-            )
-
-        selected_fields = sorted(requested_fields)
-        item = {
-            field: module.model_dump().get(field)
-            for field in selected_fields
-        }
-        # if include_related:
-        #     item = _attach_module_relations(session, [module], [item], include_children=include_children)[0]
-        # return item
-
-    # if include_related:
-    #     item = module.model_dump()
-    #     item = _attach_module_relations(session, [module], [item], include_children=include_children)[0]
-    #     return JSONResponse(content=jsonable_encoder(item))
-
-    return module
+    query = select(Module).where(Module.id == module_id)
+    items = filter_query(session, query, fielding, Module)
+    return items[0] if items else None
 
 @router.get("/{module_id}/courses", summary="Courses linked to a module")
 def get_module_courses(

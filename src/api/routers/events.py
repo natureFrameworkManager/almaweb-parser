@@ -73,6 +73,9 @@ def parse_hhmm_time(value: str, param_name: str) -> time:
 @router.get("", summary="List all Events", response_model=EventListResponseModel)
 def get_events(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
+    paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_event_parameters)],
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
     date_from: str | None = Query(None, description="Start date for range filtering (YYYY-MM-DD, inclusive)"),
@@ -89,10 +92,7 @@ def get_events(
     module_id: int | None = Query(None, description="ID of the module the event belongs to"),
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
-    page: int | None = Query(None, ge=1, description="Page number (starts at 1). If omitted together with limit, pagination is disabled."),
-    limit: int | None = Query(None, ge=1, description="Number of events returned per page. If omitted together with page, pagination is disabled."),
     include_parent: bool = Query(False, description="Include linked parent data: course and module for each event."),
-    fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included.") # type: ignore
 ):
     """
     Retrieve a list of all events
@@ -137,82 +137,15 @@ def get_events(
     if module_number:
         query = query.join(Course).join(Module).where(Module.number.ilike(f"%{module_number}%")) # type: ignore
 
-    # Count all filtered rows before pagination.
-    count_query = select(func.count()).select_from(query.distinct().subquery())
-    total_count = session.exec(count_query).one()
-
-    pagination_enabled = page is not None or limit is not None
-    total_pages: int | None = None
-    response_page: int = 1
-    response_limit: int | None = None
-
-    if pagination_enabled:
-        response_page = page if page is not None else 1
-        response_limit = limit if limit is not None else 50
-        offset = (response_page - 1) * response_limit
-        events = session.exec(query.distinct().offset(offset).limit(response_limit)).all()
-        total_pages = (total_count + response_limit - 1) // response_limit if total_count > 0 else 0
-    else:
-        events = session.exec(query.distinct()).all()
-
-    include_related = include_parent  # Events have no children, so include_children has no effect here.
-
-    if fields:
-        requested_fields = {
-            field.strip()
-            for value in fields
-            for field in value.value.split(",")
-            if field.strip()
-        }
-        valid_fields = set(Event.model_fields.keys())
-        invalid_fields = sorted(requested_fields - valid_fields)
-
-        if invalid_fields:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": "Invalid fields requested",
-                    "invalid_fields": invalid_fields,
-                    "valid_fields": sorted(valid_fields),
-                },
-            )
-
-        selected_fields = sorted(requested_fields)
-        items = [
-            {
-                field: event.model_dump().get(field)
-                for field in selected_fields
-            }
-            for event in events
-        ]
-        if include_related:
-            items = _attach_event_relations(session, events, items, include_parent=include_parent)
-
-        return {
-            "count": total_count,
-            "page": response_page,
-            "limit": response_limit,
-            "total_pages": total_pages,
-            "items": items,
-        }
-
-    if include_related:
-        items = [event.model_dump() for event in events]
-        items = _attach_event_relations(session, events, items, include_parent=include_parent)
-        return {
-            "count": total_count,
-            "page": response_page,
-            "limit": response_limit,
-            "total_pages": total_pages,
-            "items": items,
-        }
-
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
     return {
-        "count": total_count,
-        "page": response_page,
-        "limit": response_limit,
-        "total_pages": total_pages,
-        "items": events,
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
     }
 
 @router.get("/today", summary="List today's events")
@@ -366,8 +299,8 @@ def get_events_by_month(
 def get_event(
     event_id: int,
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     include_parent: bool = Query(False, description="Include linked parent data: course and module for this event."),
-    fields: list[EventField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """
     Retrieve a single event by its ID.
@@ -377,44 +310,9 @@ def get_event(
     event = session.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-
-    include_related = include_parent  # Events have no children, so include_children has no effect here.
-
-    if fields:
-        requested_fields = {
-            field.strip()
-            for value in fields
-            for field in value.value.split(",")
-            if field.strip()
-        }
-        valid_fields = set(Event.model_fields.keys())
-        invalid_fields = sorted(requested_fields - valid_fields)
-
-        if invalid_fields:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": "Invalid fields requested",
-                    "invalid_fields": invalid_fields,
-                    "valid_fields": sorted(valid_fields),
-                },
-            )
-
-        selected_fields = sorted(requested_fields)
-        item = {
-            field: event.model_dump().get(field)
-            for field in selected_fields
-        }
-        if include_related:
-            item = _attach_event_relations(session, [event], [item], include_parent=include_parent)[0]
-        return item
-
-    if include_related:
-        item = event.model_dump()
-        item = _attach_event_relations(session, [event], [item], include_parent=include_parent)[0]
-        return JSONResponse(content=jsonable_encoder(item))
-
-    return event
+    query = select(Event).where(Event.id == event_id)
+    items = filter_query(session, query, fielding, Event)
+    return items[0] if items else None
 
 @router.get("/{event_id}/courses", summary="Get courses linked to an event")
 def get_event_course(
