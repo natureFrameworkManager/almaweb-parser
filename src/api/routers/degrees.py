@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.database import SessionDep
-from database.model import Degree, Module
+from database.model import Degree, Faculty, Module
 from .shared import export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
 
 router = APIRouter(prefix="/degrees", tags=["Degrees"])
@@ -46,14 +46,15 @@ def get_degrees(
 @router.get("/{degree_id}", summary="Get degree details")
 def get_degree_details(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Degree))],
     export: Annotated[dict, Depends(export_parameters)],
     degree_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'faculty'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific degree by its ID."""
     query = select(Degree).where(Degree.id == degree_id)
-    return session.exec(query).first()
+    items = filter_query(session, query, fielding, Degree)
+    return items[0] if items else None
 
 @router.get("/{degree_id}/modules", summary="List modules for a degree")
 def get_degree_modules(
@@ -81,17 +82,25 @@ def get_degree_modules(
 @router.get("/{degree_id}/faculty", summary="Get faculty for a degree")
 def get_degree_faculty(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Faculty))],
+    fielding: Annotated[dict, Depends(fields_parameters(Faculty))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     degree_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'events'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve faculty information associated with a specific degree."""
-    degree = session.exec(select(Degree).where(Degree.id == degree_id)).first()
-    if degree and degree.faculty:
-        return degree.faculty
+    query = select(Faculty).where(Faculty.degrees.any(Degree.id == degree_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Faculty)
+    items = filter_query(session, query, fielding, Faculty)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_degree_distinct_field(

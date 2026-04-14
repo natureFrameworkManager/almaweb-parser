@@ -42,13 +42,15 @@ def get_semesters(
 @router.get("/{semester_id}", summary="Get semester details")
 def get_semester_details(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Semester))],
     export: Annotated[dict, Depends(export_parameters)],
     semester_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific semester by its ID."""
-    return session.exec(select(Semester).where(Semester.id == semester_id)).first()
+    query = select(Semester).where(Semester.id == semester_id)
+    items = filter_query(session, query, fielding, Semester)
+    return items[0] if items else None
 
 @router.get("/{semester_id}/events", summary="List events for a semester")
 def get_semester_events(

@@ -126,6 +126,7 @@ def get_course(
     course_id: int,
     session: SessionDep,
     fielding: Annotated[dict, Depends(fields_parameters(Course))],
+    export: Annotated[dict, Depends(export_parameters)],
     include_children: bool = Query(False, description="Include child data: events for this course."),
     include_parent: bool = Query(False, description="Include linked parent data: the module for this course."),
 ):

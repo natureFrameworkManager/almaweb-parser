@@ -49,14 +49,15 @@ def get_staff(
 @router.get("/{staff_id}", summary="Get staff details")
 def get_staff_details(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Staff))],
     export: Annotated[dict, Depends(export_parameters)],
     staff_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific staff member by their ID."""
     query = select(Staff).where(Staff.id == staff_id)
-    return session.exec(query).first()
+    items = filter_query(session, query, fielding, Staff)
+    return items[0] if items else None
 
 @router.get("/{staff_id}/events", summary="List events for a staff member")
 def get_staff_events(

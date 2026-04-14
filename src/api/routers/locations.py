@@ -64,14 +64,15 @@ def get_locations(
 @location_router.get("/{location_id}", summary="Get location details")
 def get_location_details(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Location))],
     export: Annotated[dict, Depends(export_parameters)],
     location_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific location by its ID."""
     query = select(Location).where(Location.id == location_id)
-    return session.exec(query).first()
+    items = filter_query(session, query, fielding, Location)
+    return items[0] if items else None
 
 @location_router.get("/{location_id}/events", summary="List events for a location")
 def get_location_events(
@@ -99,18 +100,17 @@ def get_location_events(
 @location_router.get("/{location_id}/building", summary="Get building details for a location")
 def get_location_building(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Building))],
+    fielding: Annotated[dict, Depends(fields_parameters(Building))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     location_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve building details for a specific location."""
-    location = session.exec(select(Location).where(Location.id == location_id)).first()
-    if location and location.building_id:
-        return session.exec(select(Building).where(Building.id == location.building_id)).first()
-    return None
+    query = select(Building).where(Building.locations.any(Location.id == location_id))  # type: ignore
+    items = filter_query(session, query, fielding, Building)
+    return items[0] if items else None
 
 @location_router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_location_distinct_field(

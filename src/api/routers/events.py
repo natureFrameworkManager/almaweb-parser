@@ -11,7 +11,7 @@ from datetime import date, time, timedelta
 import re
 
 from database.database import SessionDep
-from database.model import Event, Course, Module, Staff
+from database.model import Event, Course, Module, Staff, Location
 from schemas.events import EventDetailResponseModel, EventListResponseModel
 from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters
 
@@ -387,13 +387,13 @@ def get_event_staff(
 def get_event_location(
     session: SessionDep,
     event_id: int,
+    fielding: Annotated[dict, Depends(fields_parameters(Location))],
     export: Annotated[dict, Depends(export_parameters)],
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the location associated with a specific event."""
-    event = session.exec(select(Event).where(Event.id == event_id)).first()
-    if event:
-        return event.location
+    query = select(Location).where(Location.events.any(Event.id == event_id))  # type: ignore
+    items = filter_query(session, query, fielding, Location)
+    return items[0] if items else None
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for an event field")
 def get_event_distinct_field(

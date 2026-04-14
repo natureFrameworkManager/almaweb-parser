@@ -1,15 +1,20 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
+from sqlmodel import select
 
 from database.database import SessionDep
-from .shared import export_parameters, paging_parameters
+from database.model import Event
+from .shared import export_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query
 
 router = APIRouter(prefix="/schedule", tags=["Schedule"])
 
 @router.get("/weekly", summary="Get generic weekly schedule")
 def get_weekly_schedule(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
+    paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     semester_id: int = Query(..., description="ID of the semester to retrieve the schedule for."),
     faculty_ids: list[int] | None = Query(None, description="Filter schedule by faculty IDs (repeatable; OR within this filter)."),
@@ -21,7 +26,17 @@ def get_weekly_schedule(
     building_ids: list[int] | None = Query(None, description="Filter schedule by building IDs (repeatable; OR within this filter)."),
     weekdays: list[int] | None = Query(None, description="Filter schedule by weekday IDs (0=Monday, 6=Sunday; repeatable; OR within this filter)."),
     split_by_day: bool = Query(False, description="Whether to split the schedule by day of the week in the response."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'start_time_asc' or 'end_time_desc'."),
 ):
     """Retrieve a generic weekly schedule."""
-    pass
+    # TODO: real weekly filter by combining dates
+    query = select(Event)
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }

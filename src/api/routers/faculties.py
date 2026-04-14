@@ -43,14 +43,15 @@ def get_faculties(
 @router.get("/{faculty_id}", summary="Get faculty details")
 def get_faculty_details(
     session: SessionDep,
+    fielding: Annotated[dict, Depends(fields_parameters(Faculty))],
     export: Annotated[dict, Depends(export_parameters)],
     faculty_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific faculty by its ID."""
     query = select(Faculty).where(Faculty.id == faculty_id)
-    return session.exec(query).first()
+    items = filter_query(session, query, fielding, Faculty)
+    return items[0] if items else None
 
 @router.get("/{faculty_id}/degrees", summary="List degrees for a faculty")
 def get_faculty_degrees(
