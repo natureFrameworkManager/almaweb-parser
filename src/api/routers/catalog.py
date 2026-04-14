@@ -4,9 +4,8 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 from sqlalchemy import or_
 
-from database.database import SessionDep
 from database.model import EventType, Status
-from .shared import export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
+from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -29,13 +28,7 @@ def get_event_types(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, EventType)
     items = filter_query(session, query, fielding, EventType)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 
 @router.get("/event-types/{event_type_id}", summary="Get event type details")
@@ -66,13 +59,7 @@ def get_event_statuses(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Status)
     items = filter_query(session, query, fielding, Status)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/statuses/{status_id}", summary="Get event status details")
 def get_event_status_details(

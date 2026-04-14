@@ -4,9 +4,8 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 from sqlalchemy import or_
 
-from database.database import SessionDep
 from database.model import Semester, Event, Course, Module
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/semesters", tags=["Semesters"])
 
@@ -32,13 +31,7 @@ def get_semesters(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Semester)
     items = filter_query(session, query, fielding, Semester)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{semester_id}", summary="Get semester details")
 def get_semester_details(
@@ -49,6 +42,7 @@ def get_semester_details(
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific semester by its ID."""
+    get_or_404(session, Semester, semester_id, "Semester")
     query = select(Semester).where(Semester.id == semester_id)
     items = filter_query(session, query, fielding, Semester)
     return items[0] if items else None
@@ -68,13 +62,7 @@ def get_semester_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
     
 
 @router.get("/{semester_id}/courses", summary="List courses for a semester")
@@ -92,13 +80,7 @@ def get_semester_courses(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
     items = filter_query(session, query, fielding, Course)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{semester_id}/modules", summary="List modules for a semester")
 def get_semester_modules(
@@ -115,13 +97,7 @@ def get_semester_modules(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
     items = filter_query(session, query, fielding, Module)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_semester_distinct_field(

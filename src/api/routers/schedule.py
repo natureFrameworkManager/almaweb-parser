@@ -3,9 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 
-from database.database import SessionDep
 from database.model import Event
-from .shared import export_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query
+from .shared import SessionDep, export_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response
 
 router = APIRouter(prefix="/schedule", tags=["Schedule"])
 
@@ -33,10 +32,4 @@ def get_weekly_schedule(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)

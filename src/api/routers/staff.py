@@ -4,9 +4,8 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 from sqlalchemy import or_
 
-from database.database import SessionDep
 from database.model import Staff, Event, Course, Module
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
@@ -38,13 +37,7 @@ def get_staff(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Staff)
     items = filter_query(session, query, filtering, Staff)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{staff_id}", summary="Get staff details")
 def get_staff_details(
@@ -55,6 +48,7 @@ def get_staff_details(
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific staff member by their ID."""
+    get_or_404(session, Staff, staff_id, "Staff")
     query = select(Staff).where(Staff.id == staff_id)
     items = filter_query(session, query, fielding, Staff)
     return items[0] if items else None
@@ -74,13 +68,7 @@ def get_staff_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/{staff_id}/courses", summary="List courses for a staff member")
 def get_staff_courses(
@@ -97,13 +85,7 @@ def get_staff_courses(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
     items = filter_query(session, query, fielding, Course)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{staff_id}/modules", summary="List modules for a staff member")
 def get_staff_modules(
@@ -120,13 +102,7 @@ def get_staff_modules(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
     items = filter_query(session, query, fielding, Module)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for a staff field")
 def get_staff_distinct_field(

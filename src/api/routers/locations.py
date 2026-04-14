@@ -4,9 +4,8 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 from sqlalchemy import or_
 
-from database.database import SessionDep
 from database.model import Location, Building, Event
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"])
 
@@ -53,13 +52,7 @@ def get_locations(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Location)
     items = filter_query(session, query, fielding, Location)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @location_router.get("/{location_id}", summary="Get location details")
 def get_location_details(
@@ -70,6 +63,7 @@ def get_location_details(
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific location by its ID."""
+    get_or_404(session, Location, location_id, "Location")
     query = select(Location).where(Location.id == location_id)
     items = filter_query(session, query, fielding, Location)
     return items[0] if items else None
@@ -89,13 +83,7 @@ def get_location_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @location_router.get("/{location_id}/building", summary="Get building details for a location")
 def get_location_building(
@@ -116,8 +104,7 @@ def get_location_building(
 def get_location_distinct_field(
     session: SessionDep,
     field_name: str,
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+    distinct: Annotated[dict, Depends(distinct_parameters)],
 ):
     """Retrieve distinct values for a specific field across all locations."""
     pass
@@ -168,13 +155,7 @@ def get_buildings(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Building)
     items = filter_query(session, query, fielding, Building)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @room_router.get("/{building_id}", summary="Get building details")
 def get_building_details(
@@ -185,6 +166,7 @@ def get_building_details(
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'locations'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific building by its ID."""
+    get_or_404(session, Building, building_id, "Building")
     query = select(Building).where(Building.id == building_id)
     items = filter_query(session, query, fielding, Building)
     return items[0] if items else None
@@ -204,13 +186,7 @@ def get_building_locations(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Location)
     items = filter_query(session, query, fielding, Location)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @room_router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_building_distinct_field(

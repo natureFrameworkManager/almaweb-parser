@@ -8,10 +8,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.database import SessionDep
 from database.model import Course, Event, Module, Staff
 from schemas.courses import CourseDetailResponseModel, CourseListResponseModel
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
 CourseField = Enum("CourseField", {f: f for f in Course.model_fields})
@@ -112,13 +111,7 @@ def get_courses(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
     items = filter_query(session, query, fielding, Course)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 
 @router.get("/{course_id}", summary="Get a course by ID", response_model=CourseDetailResponseModel)
@@ -135,9 +128,7 @@ def get_course(
 
     Returns **404** if the course does not exist.
     """
-    course = session.get(Course, course_id)
-    if course is None:
-        raise HTTPException(status_code=404, detail="Course not found")
+    get_or_404(session, Course, course_id, "Course")
     query = select(Course).where(Course.id == course_id)
     items = filter_query(session, query, fielding, Course)
     return items[0] if items else None
@@ -157,13 +148,7 @@ def get_course_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, exports)
 
 @router.get("/{course_id}/modules", summary="Get modules linked to a course")
 def get_course_modules(
@@ -180,13 +165,7 @@ def get_course_modules(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
     items = filter_query(session, query, fielding, Module)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 @router.get("/{course_id}/staff", summary="Get staff for a course")
 def get_course_staff(
@@ -203,13 +182,7 @@ def get_course_staff(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Staff)
     items = filter_query(session, query, fielding, Staff)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for a course field")
 def get_course_distinct_field(

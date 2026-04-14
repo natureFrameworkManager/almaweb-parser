@@ -10,10 +10,9 @@ from sqlmodel import select
 from datetime import date, time, timedelta
 import re
 
-from database.database import SessionDep
 from database.model import Event, Course, Module, Staff, Location
 from schemas.events import EventDetailResponseModel, EventListResponseModel
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in Event.model_fields})
@@ -140,13 +139,7 @@ def get_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, exports)
 
 @router.get("/today", summary="List today's events")
 def get_todays_events(
@@ -163,13 +156,7 @@ def get_todays_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/tomorrow", summary="List tomorrow's events")
 def get_tomorrows_events(
@@ -186,13 +173,7 @@ def get_tomorrows_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/week", summary="List events for the current week")
 def get_weeks_events(
@@ -211,13 +192,7 @@ def get_weeks_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/day/{date}", summary="List events for a specific date")
 def get_events_by_date(
@@ -234,13 +209,7 @@ def get_events_by_date(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/week/{date}", summary="List events for a specific week")
 def get_events_by_week(
@@ -259,13 +228,7 @@ def get_events_by_week(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/month/{date}", summary="List events for a specific month")
 def get_events_by_month(
@@ -287,13 +250,7 @@ def get_events_by_month(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, export)
 
 @router.get("/{event_id}", summary="Get an event by ID", response_model=EventDetailResponseModel)
 def get_event(
@@ -307,9 +264,7 @@ def get_event(
 
     Returns **404** if the event does not exist.
     """
-    event = session.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
+    get_or_404(session, Event, event_id, "Event")
     query = select(Event).where(Event.id == event_id)
     items = filter_query(session, query, fielding, Event)
     return items[0] if items else None
@@ -329,13 +284,7 @@ def get_event_course(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
     items = filter_query(session, query, fielding, Course)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{event_id}/module", summary="Get module for an event")
 def get_event_module(
@@ -352,13 +301,7 @@ def get_event_module(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
     items = filter_query(session, query, fielding, Module)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{event_id}/staff", summary="Get staff for an event")
 def get_event_staff(
@@ -375,13 +318,7 @@ def get_event_staff(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Staff)
     items = filter_query(session, query, fielding, Staff)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{event_id}/location", summary="Get location for an event")
 def get_event_location(

@@ -5,10 +5,9 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.database import SessionDep
 from database.model import Module, Course, Event, Staff, Degree
 from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
-from .shared import export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, page_query, sort_query, filter_query
+from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
@@ -146,13 +145,7 @@ def get_modules(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
     items = filter_query(session, query, fielding, Module)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 
 @router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleDetailResponseModel)
@@ -168,9 +161,7 @@ def get_module(
 
     Returns **404** if the module does not exist.
     """
-    module = session.get(Module, module_id)
-    if module is None:
-        raise HTTPException(status_code=404, detail="Module not found")
+    get_or_404(session, Module, module_id, "Module")
     query = select(Module).where(Module.id == module_id)
     items = filter_query(session, query, fielding, Module)
     return items[0] if items else None
@@ -192,13 +183,7 @@ def get_module_courses(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
     items = filter_query(session, query, fielding, Course)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 @router.get("/{module_id}/events", summary="Events linked to a module")
 def get_module_events(
@@ -220,13 +205,7 @@ def get_module_events(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
     items = filter_query(session, query, fielding, Event)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_event_list_response(data, items, exports)
 
 @router.get("/{module_id}/staff", summary="Staff linked to a module")
 def get_module_staff(
@@ -245,13 +224,7 @@ def get_module_staff(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Staff)
     items = filter_query(session, query, fielding, Staff)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 @router.get("/{module_id}/degrees", summary="Degrees linked to a module")
 def get_module_degrees(
@@ -270,13 +243,7 @@ def get_module_degrees(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Degree)
     items = filter_query(session, query, fielding, Degree)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, exports)
 
 @router.get("/distinct/{field}", summary="Distinct values for a module field")
 def get_distinct_module_field(

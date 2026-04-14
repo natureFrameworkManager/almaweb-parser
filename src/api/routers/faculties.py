@@ -4,9 +4,8 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 from sqlalchemy import or_
 
-from database.database import SessionDep
 from database.model import Faculty, Degree
-from .shared import export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
+from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/faculties", tags=["Faculties"])
 
@@ -32,13 +31,7 @@ def get_faculties(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Faculty)
     items = filter_query(session, query, fielding, Faculty)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/{faculty_id}", summary="Get faculty details")
 def get_faculty_details(
@@ -49,6 +42,7 @@ def get_faculty_details(
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific faculty by its ID."""
+    get_or_404(session, Faculty, faculty_id, "Faculty")
     query = select(Faculty).where(Faculty.id == faculty_id)
     items = filter_query(session, query, fielding, Faculty)
     return items[0] if items else None
@@ -68,13 +62,7 @@ def get_faculty_degrees(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Degree)
     items = filter_query(session, query, fielding, Degree)
-    return {
-        "count": data["count"],
-        "page": data["page"],
-        "limit": data["limit"],
-        "total_pages": data["total_pages"],
-        "items": items,
-    }
+    return build_list_response(data, items, export)
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_faculty_distinct_field(

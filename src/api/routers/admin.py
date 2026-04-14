@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from sqlmodel import select, func
 
-from database.database import SessionDep
+from .shared import SessionDep
 from database.model import Building, Course, Degree, Event, EventType, Faculty, Location, Module, Semester, Staff, Status, CourseEventLink, CourseStaffLink, EventStaffLink, ModuleCourseLink, ModuleDegreeLink, ModuleSemesterLink, ModuleStaffLink
 
 router = APIRouter(prefix="/admin", tags=["Admin"])

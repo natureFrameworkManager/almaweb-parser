@@ -1,7 +1,15 @@
+import csv
+import io
+from collections import defaultdict
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import cast
-from fastapi import Query
-from sqlmodel import func, select
+
+from fastapi import HTTPException, Query
+from fastapi.responses import Response
+from icalendar import Calendar, Event as ICalEvent, Alarm
+from sqlmodel import Session, func, select
+
 from database.database import SessionDep
 
 class ExportFormats(str, Enum):
@@ -153,3 +161,95 @@ def sort_query(query, sorting: dict, model_class: type):
             else:
                 return query.order_by(sort_column.asc())
     return query
+
+# TODO: Real implementation
+def distinct_parameters(
+    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
+    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+):
+    return {
+        "sort": sort,
+        "format": format,
+    }
+
+def get_or_404(session: Session, model_class: type, id: int, label: str = "Resource"):
+    item = session.get(model_class, id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"{label} not found")
+    return item
+
+def build_list_response(data: dict, items: list[dict], export: dict):
+    fmt = export.get("format")
+    if fmt is not None and fmt.value == "csv":
+        if not items:
+            return Response(
+                content="", media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=export.csv"},
+            )
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=items[0].keys())
+        writer.writeheader()
+        writer.writerows(items)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=export.csv"},
+        )
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
+
+def build_event_list_response(data: dict, items: list[dict], export: dict):
+    fmt = export.get("format")
+    if fmt is not None and fmt.value == "ical":
+        title_format = export.get("ical_title_format") or "{name}"
+        location_format = export.get("ical_location_format")
+        description_format = export.get("ical_description_format")
+        reminder_minutes = export.get("ical_reminder_minutes")
+
+        cal = Calendar()
+        cal.add("prodid", "-//Almaweb Parser//EN")
+        cal.add("version", "2.0")
+
+        for item in items:
+            safe_item = defaultdict(str, {k: (v if v is not None else "") for k, v in item.items()})
+
+            ical_event = ICalEvent()
+            ical_event.add("uid", f"event-{item.get('id', 'unknown')}@almaweb-parser")
+            ical_event.add("summary", title_format.format_map(safe_item))
+
+            event_date = item.get("event_date")
+            start_time = item.get("start_time")
+            end_time = item.get("end_time")
+            if event_date and start_time:
+                ical_event.add("dtstart", datetime.combine(event_date, start_time))
+            if event_date and end_time:
+                ical_event.add("dtend", datetime.combine(event_date, end_time))
+
+            if location_format:
+                ical_event.add("location", location_format.format_map(safe_item))
+            elif item.get("location"):
+                ical_event.add("location", str(item["location"]))
+
+            if description_format:
+                ical_event.add("description", description_format.format_map(safe_item))
+
+            if reminder_minutes is not None:
+                alarm = Alarm()
+                alarm.add("action", "DISPLAY")
+                alarm.add("trigger", timedelta(minutes=-reminder_minutes))
+                alarm.add("description", "Event reminder")
+                ical_event.add_component(alarm)
+
+            cal.add_component(ical_event)
+
+        return Response(
+            content=cal.to_ical(),
+            media_type="text/calendar",
+            headers={"Content-Disposition": "attachment; filename=events.ics"},
+        )
+    return build_list_response(data, items, export)
