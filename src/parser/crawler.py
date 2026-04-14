@@ -1,10 +1,12 @@
+import re
 import signal
 from threading import Event
 from typing import Any
 
 import scrapy
 from scrapy.http import Response
-from src.database.database import create_db_and_tables
+from sqlmodel import Session
+from src.database.database import create_db_and_tables, get_or_insert_faculty, engine
 
 class TreeNode:
     def __init__(self, name, parent=None):
@@ -41,6 +43,7 @@ class LectureSpider(scrapy.Spider):
     ]
     root_node = TreeNode("Root")
     found_modules: list[ModuleLink] = []
+    found_faculties: list[dict[str, Any]] = []
 
     def __init__(self, name: str | None = None, **kwargs: Any):
         super().__init__(name, **kwargs)
@@ -68,6 +71,7 @@ class LectureSpider(scrapy.Spider):
                     continue
                 child_node = TreeNode(name, parent=parent_node)
                 parent_node.add_child(child_node)
+                self.logger.info(f"Follow semester: {name}")
                 yield response.follow(url, callback=self.parse, cb_kwargs={"parent_node": child_node})
 
         for anchor in navigationNodes:
@@ -75,12 +79,26 @@ class LectureSpider(scrapy.Spider):
             if not text:
                 continue
             name = text.strip()
+            match = re.match(r"^(?:A?)(\d{2}) - ", name)
+            if match:
+                self.found_faculties.append({
+                    "prefix": int(match.group(1)),
+                    "name": name
+                })
+        for anchor in navigationNodes:
+            text = anchor.css("::text").get()
+            if not text:
+                continue
+            name = text.strip()
+            if not (name.startswith("10 - Fakultät für Mathematik und Informatik") or (len(breadcrumbs) > 1 and breadcrumbs[1].startswith("10 - Fakultät für Mathematik und Informatik"))):
+                continue
             url = anchor.attrib.get("href")
             if not url:
                 continue
             child_node = TreeNode(name, parent=parent_node)
             parent_node.add_child(child_node)
 
+            self.logger.info(f"Follow navigation node: {name}")
             yield response.follow(url, callback=self.parse, cb_kwargs={"parent_node": child_node})
         for anchor in moduleNodes:
             text = anchor.css("::text").get()
@@ -109,6 +127,10 @@ class LectureSpider(scrapy.Spider):
 
         try:
             signal.signal(signal.SIGINT, _request_cancel)
+            with Session(engine) as session:
+                for faculty in self.found_faculties:
+                    get_or_insert_faculty(session, faculty["name"], faculty["prefix"])
+                session.commit()
             handleModuleList(self.found_modules, cancel_event=cancel_event)
         finally:
             signal.signal(signal.SIGINT, previous_sigint_handler)
