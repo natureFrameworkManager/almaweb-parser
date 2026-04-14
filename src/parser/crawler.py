@@ -34,11 +34,13 @@ from .module_parser import handleModuleList
 class LectureSpider(scrapy.Spider):
     name = "lecture_spider"
     start_urls = [
-        "https://almaweb.uni-leipzig.de/scripts/mgrqispi.dll?APPNAME=CampusNet&PRGNAME=ACTION&ARGUMENTS=-AlRW1lJ7lEvlq1bJQaAgjNEoc7vcO5zFz0B~Zb5dZYR0Zp0w1ooM5YOTdd71WTwtfKY7If6lHLVqnj8cOibo582kdF0~khXvOSn8194IYKybtU7nB2jhM3oMQjf6MFQk5vR2aFRVwgZghYk2qUx1KFj~pewVTVSYKMVtfVnnFKsWVxqFItbrJQJ6vpXVv5g2TcLXKa3FUqjRjAPg_"
-        # "https://almaweb.uni-leipzig.de/scripts/mgrqispi.dll?APPNAME=CampusNet&PRGNAME=ACTION&ARGUMENTS=-AukXTJvXHp6VtynaLEXA7YoOnZYiFw1hBKp~IhHHOJ0Fr8jK0j~gQ3Yrlx7TIlvwcSOd-Bx1qknvSqqYxTOycZUbUetCGPSJVaotazcgsv6Gswzl1FYRuihwZ96IppD5Jfp0m9bp1zmiuUQV-LKlgugpuNT-cLv01iTNyKTLD6KkN~-RdxKGujfLrRQ__"
+        # SoSe26 Informatik B.Sc. 2. Sem "https://almaweb.uni-leipzig.de/scripts/mgrqispi.dll?APPNAME=CampusNet&PRGNAME=ACTION&ARGUMENTS=-AQ7k~sPKc0Pte8b0onhcs2tRJFIGer3aorA2m7Ho3AzGRE7cah2oC94sYCVIV3TpykT2Si3J1dVVjNkNq5DQDGk6OXoxKjambwnQCXAgblrCXJv~~G8yjwTA3yFQvSuP0LdRoQD9I2AoSe~AewhynQ5WOX3hg~s3n~YXSnrCrD7gRNt3tEG0SFaeXyaHCay2anp~twtgy0S5TdNQ_"
+        # SoSe26 10- "https://almaweb.uni-leipzig.de/scripts/mgrqispi.dll?APPNAME=CampusNet&PRGNAME=ACTION&ARGUMENTS=-AlRW1lJ7lEvlq1bJQaAgjNEoc7vcO5zFz0B~Zb5dZYR0Zp0w1ooM5YOTdd71WTwtfKY7If6lHLVqnj8cOibo582kdF0~khXvOSn8194IYKybtU7nB2jhM3oMQjf6MFQk5vR2aFRVwgZghYk2qUx1KFj~pewVTVSYKMVtfVnnFKsWVxqFItbrJQJ6vpXVv5g2TcLXKa3FUqjRjAPg_"
+        # SoSe26 "https://almaweb.uni-leipzig.de/scripts/mgrqispi.dll?APPNAME=CampusNet&PRGNAME=ACTION&ARGUMENTS=-AukXTJvXHp6VtynaLEXA7YoOnZYiFw1hBKp~IhHHOJ0Fr8jK0j~gQ3Yrlx7TIlvwcSOd-Bx1qknvSqqYxTOycZUbUetCGPSJVaotazcgsv6Gswzl1FYRuihwZ96IppD5Jfp0m9bp1zmiuUQV-LKlgugpuNT-cLv01iTNyKTLD6KkN~-RdxKGujfLrRQ__"
+        "https://almaweb.uni-leipzig.de/scripts/mgrqispi.dll?APPNAME=CampusNet&PRGNAME=EXTERNALPAGES&ARGUMENTS=-N000000000000001,-N000001,-Acc"
     ]
     root_node = TreeNode("Root")
-    found_modules = []
+    found_modules: list[ModuleLink] = []
 
     def __init__(self, name: str | None = None, **kwargs: Any):
         super().__init__(name, **kwargs)
@@ -50,6 +52,23 @@ class LectureSpider(scrapy.Spider):
 
         navigationNodes = response.css('a.auditRegNodeLink')
         moduleNodes = [x for x in response.css("a[name='eventLink']") if "MODULEDETAILS" in x.attrib.get("href", "")]
+        breadcrumbs = [x.strip().replace("\xa0>", "") for x in response.css('#breadcrumb-ul a::text').getall() if x.strip()]
+
+        if len(navigationNodes) == 0 and len(moduleNodes) == 0 and len(breadcrumbs) == 0:
+            semesterNodes = response.css('.linkItemContainer .linkItem[title=Vorlesungsverzeichnis] a.depth_2')
+            for anchor in [semesterNodes[0]]:
+                text = anchor.css("::text").get()
+                if not text:
+                    continue
+                name = text.strip()
+                if not (name.startswith("SoSe") or name.startswith("WiSe")):
+                    continue
+                url = anchor.attrib.get("href")
+                if not url:
+                    continue
+                child_node = TreeNode(name, parent=parent_node)
+                parent_node.add_child(child_node)
+                yield response.follow(url, callback=self.parse, cb_kwargs={"parent_node": child_node})
 
         for anchor in navigationNodes:
             text = anchor.css("::text").get()
