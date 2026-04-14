@@ -6,9 +6,9 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
-from database.model import Module
+from database.model import Module, Course, Event, Staff, Degree
 from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
-from .shared import export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters
+from .shared import export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, page_query, sort_query, filter_query
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
@@ -306,72 +306,104 @@ def get_module(
 def get_module_courses(
     module_id: int,
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Course))],
+    fielding: Annotated[dict, Depends(fields_parameters(Course))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_parameters)],
     include: list[IncludeOption] | None = Query(None, description="Include data for related entities of courses: events, staff. Repeatable for multiple relations."),
-    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: SortOption | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """
     Retrieve a module courses.
     """
-    module = session.exec(select(Module).where(Module.id == module_id)).first()
-    if module and module.courses:
-        return module.courses
+    query = select(Course).where(Course.modules.any(Module.id == module_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Course)
+    items = filter_query(session, query, fielding, Course)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{module_id}/events", summary="Events linked to a module")
 def get_module_events(
     module_id: int,
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_event_parameters)],
     date_from: str | None = Query(None, description="Filter events that start on or after this ISO 8601 datetime."),
     date_to: str | None = Query(None, description="Filter events that end on or before this ISO 8601 datetime."),
     weekday: list[int] | None = Query(None, description="Filter events that occur on these weekdays (0=Monday, 6=Sunday). Repeatable for multiple days."),
     include: list[IncludeOption] | None = Query(None, description="Include data for related entities of events: courses, staff. Repeatable for multiple relations."),
-    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: SortOption | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """
     Retrieve a module events.
     """
-    module = session.exec(select(Module).where(Module.id == module_id)).first()
-    if module and module.courses:
-        return [event for course in module.courses if course.events is not None for event in course.events]
+    query = select(Event).where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{module_id}/staff", summary="Staff linked to a module")
 def get_module_staff(
     module_id: int,
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Staff))],
+    fielding: Annotated[dict, Depends(fields_parameters(Staff))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_parameters)],
     include: list[IncludeOption] | None = Query(None, description="Include staff of related courses and events when requesting module staff. Repeatable for multiple relations."),
-    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: SortOption | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """
     Retrieve a module staff.
     """
-    module = session.exec(select(Module).where(Module.id == module_id)).first()
-    if module and module.responsible_persons:
-        return module.responsible_persons
+    query = select(Staff).where(Staff.modules.any(Module.id == module_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Staff)
+    items = filter_query(session, query, fielding, Staff)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{module_id}/degrees", summary="Degrees linked to a module")
 def get_module_degrees(
     module_id: int,
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Degree))],
+    fielding: Annotated[dict, Depends(fields_parameters(Degree))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_parameters)],
     include: list[IncludeOption] | None = Query(None, description="Include degrees of related courses and events when requesting module degrees. Repeatable for multiple relations."),
-    fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: SortOption | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """
     Retrieve a module degrees.
     """
-    module = session.exec(select(Module).where(Module.id == module_id)).first()
-    if module and module.degrees:
-        return module.degrees
+    query = select(Degree).where(Degree.modules.any(Module.id == module_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Degree)
+    items = filter_query(session, query, fielding, Degree)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/distinct/{field}", summary="Distinct values for a module field")
 def get_distinct_module_field(

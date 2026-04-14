@@ -6,13 +6,15 @@ from sqlalchemy import or_
 
 from database.database import SessionDep
 from database.model import Location, Building, Event
-from .shared import export_parameters, export_event_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"])
 
 @location_router.get("", summary="List all locations")
 def get_locations(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Location))],
+    fielding: Annotated[dict, Depends(fields_parameters(Location))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     ids: list[int] | None = Query(None, description="Location ID values (repeatable; OR within this filter)."),
@@ -25,7 +27,6 @@ def get_locations(
     size_max: float | None = Query(None, ge=0, description="Maximum size in square meters (inclusive)."),
     accessible: bool | None = Query(None, description="Whether the location is accessible (true or false)."),
     building_ids: list[int] | None = Query(None, description="Building ID values to filter locations within specific buildings (repeatable; OR within this filter)."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all locations."""
     query = select(Location)
@@ -49,7 +50,16 @@ def get_locations(
     if building_ids:
         query = query.where(or_(*[Location.building_id == value for value in building_ids])) # type: ignore
 
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Location)
+    items = filter_query(session, query, fielding, Location)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @location_router.get("/{location_id}", summary="Get location details")
 def get_location_details(
@@ -66,16 +76,25 @@ def get_location_details(
 @location_router.get("/{location_id}/events", summary="List events for a location")
 def get_location_events(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     location_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'staff'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events associated with a specific location."""
     query = select(Event).where(Event.location_id == location_id)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @location_router.get("/{location_id}/building", summary="Get building details for a location")
 def get_location_building(
@@ -122,6 +141,8 @@ room_router = APIRouter(prefix="/buildings", tags=["Buildings"])
 @room_router.get("", summary="List all buildings")
 def get_buildings(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Building))],
+    fielding: Annotated[dict, Depends(fields_parameters(Building))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     ids: list[int] | None = Query(None, description="Building ID values (repeatable; OR within this filter)."),
@@ -129,7 +150,6 @@ def get_buildings(
     short_names: list[str] | None = Query(None, description="Building short name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     addresses: list[str] | None = Query(None, description="Building address values (repeatable; case-insensitive, partial match; OR within this filter)."),
     location_ids: list[int] | None = Query(None, description="Location ID values to filter buildings that contain specific locations (repeatable; OR within this filter)."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all buildings."""
     query = select(Building)
@@ -145,7 +165,16 @@ def get_buildings(
     if location_ids:
         query = query.join(Location).where(or_(*[Location.id == value for value in location_ids])) # type: ignore
 
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Building)
+    items = filter_query(session, query, fielding, Building)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @room_router.get("/{building_id}", summary="Get building details")
 def get_building_details(
@@ -161,15 +190,25 @@ def get_building_details(
 @room_router.get("/{building_id}/locations", summary="List locations for a building")
 def get_building_locations(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Location))],
+    fielding: Annotated[dict, Depends(fields_parameters(Location))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     building_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'events'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'seats_desc'."),
 ):
     """Retrieve a list of locations associated with a specific building."""
-    return session.exec(select(Location).where(Location.building_id == building_id)).all()
+    query = select(Location).where(Location.building_id == building_id)
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Location)
+    items = filter_query(session, query, fielding, Location)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @room_router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_building_distinct_field(

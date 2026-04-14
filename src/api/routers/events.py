@@ -11,9 +11,9 @@ from datetime import date, time, timedelta
 import re
 
 from database.database import SessionDep
-from database.model import Event, Course, Module
+from database.model import Event, Course, Module, Staff
 from schemas.events import EventDetailResponseModel, EventListResponseModel
-from .shared import export_parameters, export_event_parameters, paging_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters
 
 router = APIRouter(prefix="/events", tags=["Events"])
 EventField = Enum("EventField", {f: f for f in Event.model_fields})
@@ -218,86 +218,131 @@ def get_events(
 @router.get("/today", summary="List today's events")
 def get_todays_events(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring today."""
     today = date.today()
     query = select(Event).where(Event.event_date == today)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/tomorrow", summary="List tomorrow's events")
 def get_tomorrows_events(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring tomorrow."""
     tomorrow = date.today() + timedelta(days=1)
     query = select(Event).where(Event.event_date == tomorrow)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/week", summary="List events for the current week")
 def get_weeks_events(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring in the current week (Monday to Sunday)."""
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday())  # Monday
     end_of_week = start_of_week + timedelta(days=6)  # Sunday
     query = select(Event).where(Event.event_date >= start_of_week).where(Event.event_date <= end_of_week)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/day/{date}", summary="List events for a specific date")
 def get_events_by_date(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring on a specific date."""
     query = select(Event).where(Event.event_date == date)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/week/{date}", summary="List events for a specific week")
 def get_events_by_week(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring in the week of a specific date (Monday to Sunday)."""
     start_of_week = date - timedelta(days=date.weekday())  # Monday
     end_of_week = start_of_week + timedelta(days=6)  # Sunday
     query = select(Event).where(Event.event_date >= start_of_week).where(Event.event_date <= end_of_week)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/month/{date}", summary="List events for a specific month")
 def get_events_by_month(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring in the month of a specific date."""
     start_of_month = date.replace(day=1)
@@ -306,7 +351,16 @@ def get_events_by_month(
     else:
         start_of_next_month = start_of_month.replace(month=date.month + 1)
     query = select(Event).where(Event.event_date >= start_of_month).where(Event.event_date < start_of_next_month)
-    return session.exec(query).all()
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{event_id}", summary="Get an event by ID", response_model=EventDetailResponseModel)
 def get_event(
@@ -365,41 +419,71 @@ def get_event(
 @router.get("/{event_id}/courses", summary="Get courses linked to an event")
 def get_event_course(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Course))],
+    fielding: Annotated[dict, Depends(fields_parameters(Course))],
+    paging: Annotated[dict, Depends(paging_parameters)],
     event_id: int,
     export: Annotated[dict, Depends(export_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the course associated with a specific event."""
-    event = session.exec(select(Event).where(Event.id == event_id)).first()
-    if event and event.courses:
-        return event.courses
+    query = select(Course).where(Course.events.any(Event.id == event_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Course)
+    items = filter_query(session, query, fielding, Course)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{event_id}/module", summary="Get module for an event")
 def get_event_module(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Module))],
+    fielding: Annotated[dict, Depends(fields_parameters(Module))],
+    paging: Annotated[dict, Depends(paging_parameters)],
     event_id: int,
     export: Annotated[dict, Depends(export_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the module associated with a specific event."""
-    event = session.exec(select(Event).where(Event.id == event_id)).first()
-    if event and event.courses:
-        return [module for course in event.courses if course.modules is not None for module in course.modules]
+    query = select(Module).where(Module.courses.any(Course.events.any(Event.id == event_id)))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Module)
+    items = filter_query(session, query, fielding, Module)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{event_id}/staff", summary="Get staff for an event")
 def get_event_staff(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Staff))],
+    fielding: Annotated[dict, Depends(fields_parameters(Staff))],
+    paging: Annotated[dict, Depends(paging_parameters)],
     event_id: int,
     export: Annotated[dict, Depends(export_parameters)],
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'module'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the staff members associated with a specific event."""
-    event = session.exec(select(Event).where(Event.id == event_id)).first()
-    if event and event.staff:
-        return event.staff
+    query = select(Staff).where(Staff.events.any(Event.id == event_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Staff)
+    items = filter_query(session, query, fielding, Staff)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{event_id}/location", summary="Get location for an event")
 def get_event_location(

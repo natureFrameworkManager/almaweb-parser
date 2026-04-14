@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.database import SessionDep
-from database.model import Staff
+from database.model import Staff, Event, Course, Module
 from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
@@ -61,47 +61,71 @@ def get_staff_details(
 @router.get("/{staff_id}/events", summary="List events for a staff member")
 def get_staff_events(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     staff_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of events associated with a specific staff member."""
-    staff = session.exec(select(Staff).where(Staff.id == staff_id)).first()
-    if staff:
-        return staff.events
+    query = select(Event).where(Event.staff.any(Staff.id == staff_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Event)
+    items = filter_query(session, query, fielding, Event)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{staff_id}/courses", summary="List courses for a staff member")
 def get_staff_courses(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Course))],
+    fielding: Annotated[dict, Depends(fields_parameters(Course))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     staff_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of courses associated with a specific staff member."""
-    staff = session.exec(select(Staff).where(Staff.id == staff_id)).first()
-    if staff:
-        return staff.courses
+    query = select(Course).where(Course.staff.any(Staff.id == staff_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Course)
+    items = filter_query(session, query, fielding, Course)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/{staff_id}/modules", summary="List modules for a staff member")
 def get_staff_modules(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Module))],
+    fielding: Annotated[dict, Depends(fields_parameters(Module))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     staff_id: int,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
-    fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of modules associated with a specific staff member as the responsible person."""
-    staff = session.exec(select(Staff).where(Staff.id == staff_id)).first()
-    if staff:
-        return staff.modules
+    query = select(Module).where(Module.responsible_persons.any(Staff.id == staff_id))  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, Module)
+    items = filter_query(session, query, fielding, Module)
+    return {
+        "count": data["count"],
+        "page": data["page"],
+        "limit": data["limit"],
+        "total_pages": data["total_pages"],
+        "items": items,
+    }
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for a staff field")
 def get_staff_distinct_field(
