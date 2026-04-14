@@ -30,4 +30,4 @@ REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 FEED_EXPORT_ENCODING = "utf-8"
 
 # Limit crawled pages
-CLOSESPIDER_PAGECOUNT = 20  # Stop after 10 responses
+# CLOSESPIDER_PAGECOUNT = 20  # Stop after 10 responses
