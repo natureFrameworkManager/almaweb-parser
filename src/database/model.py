@@ -77,7 +77,9 @@ class Module(SQLModel, table=True):
     content: str = ""
     exam_prerequisites: str = ""
     prerequisites: dict[str, str] = Field(sa_column=Column(JSON))
+    faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the module belongs, if known
 
+    faculty: "Faculty" = Relationship(back_populates="modules")
     path: list[str] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
     responsible_persons: list["Staff"] = Relationship(back_populates="modules", link_model=ModuleStaffLink)
     start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
@@ -162,7 +164,7 @@ class Degree(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
-    faculty_id: int = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
+    faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="degrees")
     modules: list["Module"] = Relationship(back_populates="degrees", link_model=ModuleDegreeLink)
@@ -176,6 +178,7 @@ class Faculty(SQLModel, table=True):
     name: str = ""
     prefix: int | None = None # A short prefix or code for the faculty, e.g. "INF", "MATH", etc.
 
+    modules: list["Module"] = Relationship(back_populates="faculty")
     degrees: list["Degree"] = Relationship(back_populates="faculty")
 
 class Semester(SQLModel, table=True):

@@ -1,3 +1,4 @@
+import re
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
@@ -9,9 +10,9 @@ except ModuleNotFoundError:
     from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType
 
 try:
-    from .model import Course, Event, Module, ModuleCourseLink, CourseEventLink
+    from .model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty
 except ModuleNotFoundError:
-    from src.database.model import Course, Event, Module, ModuleCourseLink, CourseEventLink
+    from src.database.model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty
 
 DATABASE_URL = "sqlite:///database.db"
 
@@ -181,6 +182,69 @@ def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
         raise RuntimeError("Could not get location id after add and flush to database")
     return location.id
 
+def get_or_insert_faculty(session: Session, name: str, prefix: int) -> int:
+    """
+    Look up a faculty by name. If it does not exist, insert it.
+
+    Returns the faculty ID.
+    """
+
+    try:
+        from .model import Faculty
+    except ModuleNotFoundError:
+        from src.database.model import Faculty
+
+    faculty = session.exec(select(Faculty).where(Faculty.name == name)).first()
+    if faculty is not None:
+        if faculty.id is None:
+            raise RuntimeError("Faculty to add to database has no id")
+        return faculty.id
+
+    faculty = Faculty(name=name, prefix=prefix)
+    session.add(faculty)
+    session.flush()
+    if faculty.id is None:
+        raise RuntimeError("Could not get faculty id after add and flush to database")
+    return faculty.id
+
+def _get_or_insert_semester(session: Session, name: str, year: int, term: str) -> int:
+    """
+    Look up a semester by name. If it does not exist, insert it.
+
+    Returns the semester ID.
+    """
+
+    try:
+        from .model import Semester
+    except ModuleNotFoundError:
+        from src.database.model import Semester
+
+    semester = session.exec(select(Semester).where(Semester.name == name)).first()
+    if semester is not None:
+        if semester.id is None:
+            raise RuntimeError("Semester to add to database has no id")
+        return semester.id
+
+    semester = Semester(name=name, year=year, term=term)
+    session.add(semester)
+    session.flush()
+    if semester.id is None:
+        raise RuntimeError("Could not get semester id after add and flush to database")
+    return semester.id
+
+def _find_faculty_by_prefix(session: Session, prefix: int) -> Faculty | None:
+    """
+    Look up a faculty by its prefix (short code). Returns the Faculty object if found, or None if no faculty with the given prefix exists.
+    """
+
+    try:
+        from .model import Faculty
+    except ModuleNotFoundError:
+        from src.database.model import Faculty
+
+    faculty = session.exec(select(Faculty).where(Faculty.prefix == prefix)).first()
+    return faculty
+
 def _link_module_course(session: Session, module_id: int, course_id: int):
     """
     Create a link between a module and a course in the ModuleCourseLink association table, if it does not already exist.
@@ -193,6 +257,24 @@ def _link_module_course(session: Session, module_id: int, course_id: int):
 
     if link is None:
         session.add(ModuleCourseLink(module_id=module_id, course_id=course_id))
+
+def _link_module_semester(session: Session, module_id: int, semester_id: int):
+    """
+    Create a link between a module and a semester in the ModuleSemesterLink association table, if it does not already exist.
+    """
+    try:
+        from .model import ModuleSemesterLink
+    except ModuleNotFoundError:
+        from src.database.model import ModuleSemesterLink
+
+    link = session.exec(
+        select(ModuleSemesterLink)
+        .where(ModuleSemesterLink.module_id == module_id)
+        .where(ModuleSemesterLink.semester_id == semester_id)
+    ).first()
+
+    if link is None:
+        session.add(ModuleSemesterLink(module_id=module_id, semester_id=semester_id))
 
 def _link_course_event(session: Session, course_id: int, event_id: int):
     """
@@ -279,6 +361,13 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
         if module.id is None:
             raise RuntimeError("Module to add to database has no id")
         return module.id, False
+    
+    faculty_id = None
+    module_number_prefix_match = re.match(r"^A?(\d{2})", module_data["number"])
+    if module_number_prefix_match:
+        faculty = _find_faculty_by_prefix(session, int(module_number_prefix_match.group(1)))
+        if faculty is not None:
+            faculty_id = faculty.id
 
     # Unpacking of module_data into Module constructor, excluding "courses" key for separate handling, because "courses" is not a field of Module
     module = Module(
@@ -291,7 +380,9 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
         goals=module_data.get("goals", ""),
         content=module_data.get("content", ""),
         exam_prerequisites=module_data.get("exam_prerequisites", ""),
-        prerequisites=str(module_data.get("prerequisites", {})),
+        prerequisites=module_data.get("prerequisites", {}),
+        path=module_data.get("path", []),
+        faculty_id=faculty_id
     ) # type: ignore
     # Add the module to the session and flush (save to DB) to get an ID assigned, which is needed for linking courses
     session.add(module)
@@ -413,10 +504,47 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
         "events": 0
     }
     with Session(engine) as session:
+        faculty_name = None
+        faculty_prefix = None
+        if len(module_data["path"]) > 0:
+            # Fakultät started mit "(A)[0-9][0-9] - ...", z.B. "A10 - Fakultät für Mathematik und Informatik" or "A07 - Wirtschaftswissenschaftliche Fakultät"
+            # We extract the faculty name from the navigation path, which is needed for the foreign key relationship. If no faculty can be identified, we leave it null.
+            # The faculty name is usually the third element in the path, but we check all elements to be safe, because the structure is not perfectly consistent. We look for an element that starts with a pattern like "A10 - Fakultät für Mathematik und Informatik" and extract the faculty name from it.
+            for path_element in module_data["path"]:
+                match = re.match(r"^(?:A?)(\d{2}) - ", path_element)
+                if match:
+                    faculty_prefix = int(match.group(1)) # The prefix is the number before the " - "
+                    faculty_name = path_element
+                    break
+        if faculty_name and faculty_prefix is not None:
+            get_or_insert_faculty(session, faculty_name, faculty_prefix)
+
+        semester_name = None
+        semester_year = None
+        semester_term = None
+        if len(module_data["path"]) > 0:
+            # We also try to extract the semester from the navigation path, looking for an element that starts with "SoSe" or "WiSe"
+            for path_element in module_data["path"]:
+                if path_element.startswith("SoSe") or path_element.startswith("WiSe"):
+                    semester_name = path_element
+                    if path_element.startswith("SoSe"):
+                        semester_term = "SoSe"
+                    elif path_element.startswith("WiSe"):
+                        semester_term = "WiSe"
+                    year_match = re.search(r"\d{2,4}", path_element)
+                    if year_match:
+                        semester_year = int(year_match.group(0))
+                    break
+        semester_id = None
+        if semester_name and semester_year and semester_term:
+            semester_id = _get_or_insert_semester(session, semester_name, semester_year, semester_term)
+
         # Get or insert the module, and get its ID for linking courses
         module_id, inserted = _get_or_insert_module(session, module_data)
         if inserted:
             inserted_count["modules"] += 1
+        if semester_id is not None:
+            _link_module_semester(session, module_id, semester_id)
 
         for course_data in module_data["courses"]:
             # Get or insert each course, and get its corresponding ID for linking the events
@@ -442,4 +570,5 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
         # This doesn't insert any record if any error occurs during the process, so all relationships are guaranteed to be consistent
         session.commit()
 
+        print(f"Finished inserting module {module_data['number']} - {module_data['name']}. Inserted {inserted_count['modules']} new modules, {inserted_count['courses']} new courses, and {inserted_count['events']} new events.")
         return inserted, inserted_count
