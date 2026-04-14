@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Faculty, Degree
-from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/faculties", tags=["Faculties"])
 
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/faculties", tags=["Faculties"])
 def get_faculties(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Faculty))],
+    including: Annotated[dict, Depends(include_parameters(Faculty))],
     fielding: Annotated[dict, Depends(fields_parameters(Faculty))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
@@ -30,38 +31,38 @@ def get_faculties(
         query = query.where(or_(*[Faculty.degrees.any(Degree.id == value) for value in degrees])) # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Faculty)
-    items = filter_query(session, query, fielding, Faculty)
+    items = filter_query(session, query, fielding, Faculty, including)
     return build_list_response(data, items, export)
 
 @router.get("/{faculty_id}", summary="Get faculty details")
 def get_faculty_details(
     session: SessionDep,
+    including: Annotated[dict, Depends(include_parameters(Faculty))],
     fielding: Annotated[dict, Depends(fields_parameters(Faculty))],
     export: Annotated[dict, Depends(export_parameters)],
     faculty_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific faculty by its ID."""
     get_or_404(session, Faculty, faculty_id, "Faculty")
     query = select(Faculty).where(Faculty.id == faculty_id)
-    items = filter_query(session, query, fielding, Faculty)
+    items = filter_query(session, query, fielding, Faculty, including)
     return items[0] if items else None
 
 @router.get("/{faculty_id}/degrees", summary="List degrees for a faculty")
 def get_faculty_degrees(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Degree))],
+    including: Annotated[dict, Depends(include_parameters(Degree))],
     fielding: Annotated[dict, Depends(fields_parameters(Degree))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     faculty_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
 ):
     """Retrieve a list of degrees associated with a specific faculty."""
     query = select(Degree).where(Degree.faculty_id == faculty_id)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Degree)
-    items = filter_query(session, query, fielding, Degree)
+    items = filter_query(session, query, fielding, Degree, including)
     return build_list_response(data, items, export)
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")

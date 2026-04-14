@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Semester, Event, Course, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/semesters", tags=["Semesters"])
 
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/semesters", tags=["Semesters"])
 def get_semesters(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Semester))],
+    including: Annotated[dict, Depends(include_parameters(Semester))],
     fielding: Annotated[dict, Depends(fields_parameters(Semester))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
@@ -30,38 +31,38 @@ def get_semesters(
         query = query.where(or_(*[Semester.term.ilike(f"%{value}%") for value in terms])) # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Semester)
-    items = filter_query(session, query, fielding, Semester)
+    items = filter_query(session, query, fielding, Semester, including)
     return build_list_response(data, items, export)
 
 @router.get("/{semester_id}", summary="Get semester details")
 def get_semester_details(
     session: SessionDep,
+    including: Annotated[dict, Depends(include_parameters(Semester))],
     fielding: Annotated[dict, Depends(fields_parameters(Semester))],
     export: Annotated[dict, Depends(export_parameters)],
     semester_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific semester by its ID."""
     get_or_404(session, Semester, semester_id, "Semester")
     query = select(Semester).where(Semester.id == semester_id)
-    items = filter_query(session, query, fielding, Semester)
+    items = filter_query(session, query, fielding, Semester, including)
     return items[0] if items else None
 
 @router.get("/{semester_id}/events", summary="List events for a semester")
 def get_semester_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    including: Annotated[dict, Depends(include_parameters(Event))],
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     semester_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'staff'. Repeatable for multiple relations."),
 ):
     """Retrieve a list of events associated with a specific semester with a many-to-many relationship."""
     query = select(Event).where(Event.courses.any(Course.modules.any(Module.start_semester.any(Semester.id == semester_id))))  # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event)
+    items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
     
 
@@ -69,34 +70,34 @@ def get_semester_events(
 def get_semester_courses(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Course))],
+    including: Annotated[dict, Depends(include_parameters(Course))],
     fielding: Annotated[dict, Depends(fields_parameters(Course))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     semester_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'staff'. Repeatable for multiple relations."),
 ):
     """Retrieve a list of courses associated with a specific semester."""
     query = select(Course).where(Course.modules.any(Module.start_semester.any(Semester.id == semester_id)))  # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
-    items = filter_query(session, query, fielding, Course)
+    items = filter_query(session, query, fielding, Course, including)
     return build_list_response(data, items, export)
 
 @router.get("/{semester_id}/modules", summary="List modules for a semester")
 def get_semester_modules(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Module))],
+    including: Annotated[dict, Depends(include_parameters(Module))],
     fielding: Annotated[dict, Depends(fields_parameters(Module))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     semester_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'events', 'staff'. Repeatable for multiple relations."),
 ):
     """Retrieve a list of modules associated with a specific semester."""
     query = select(Module).where(Module.start_semester.any(Semester.id == semester_id))  # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
-    items = filter_query(session, query, fielding, Module)
+    items = filter_query(session, query, fielding, Module, including)
     return build_list_response(data, items, export)
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")

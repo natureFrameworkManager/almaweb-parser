@@ -4,8 +4,8 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 from sqlalchemy import or_
 
-from database.model import Location, Building, Event
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from database.model import Location, Building, Event, Module
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"])
 
@@ -13,6 +13,7 @@ location_router = APIRouter(prefix="/locations", tags=["Locations"])
 def get_locations(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Location))],
+    including: Annotated[dict, Depends(include_parameters(Location))],
     fielding: Annotated[dict, Depends(fields_parameters(Location))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
@@ -51,53 +52,53 @@ def get_locations(
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Location)
-    items = filter_query(session, query, fielding, Location)
+    items = filter_query(session, query, fielding, Location, including)
     return build_list_response(data, items, export)
 
 @location_router.get("/{location_id}", summary="Get location details")
 def get_location_details(
     session: SessionDep,
+    including: Annotated[dict, Depends(include_parameters(Location))],
     fielding: Annotated[dict, Depends(fields_parameters(Location))],
     export: Annotated[dict, Depends(export_parameters)],
     location_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'courses'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific location by its ID."""
     get_or_404(session, Location, location_id, "Location")
     query = select(Location).where(Location.id == location_id)
-    items = filter_query(session, query, fielding, Location)
+    items = filter_query(session, query, fielding, Location, including)
     return items[0] if items else None
 
 @location_router.get("/{location_id}/events", summary="List events for a location")
 def get_location_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    including: Annotated[dict, Depends(include_parameters(Event))],
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     location_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules', 'staff'. Repeatable for multiple relations."),
 ):
     """Retrieve a list of events associated with a specific location."""
     query = select(Event).where(Event.location_id == location_id)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event)
+    items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
 @location_router.get("/{location_id}/building", summary="Get building details for a location")
 def get_location_building(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Building))],
+    including: Annotated[dict, Depends(include_parameters(Building))],
     fielding: Annotated[dict, Depends(fields_parameters(Building))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     location_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'modules'. Repeatable for multiple relations."),
 ):
     """Retrieve building details for a specific location."""
     query = select(Building).where(Building.locations.any(Location.id == location_id))  # type: ignore
-    items = filter_query(session, query, fielding, Building)
+    items = filter_query(session, query, fielding, Building, including)
     return items[0] if items else None
 
 @location_router.get("/distinct/{field_name}", summary="Get distinct values")
@@ -129,6 +130,7 @@ room_router = APIRouter(prefix="/buildings", tags=["Buildings"])
 def get_buildings(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Building))],
+    including: Annotated[dict, Depends(include_parameters(Building))],
     fielding: Annotated[dict, Depends(fields_parameters(Building))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
@@ -154,38 +156,38 @@ def get_buildings(
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Building)
-    items = filter_query(session, query, fielding, Building)
+    items = filter_query(session, query, fielding, Building, including)
     return build_list_response(data, items, export)
 
 @room_router.get("/{building_id}", summary="Get building details")
 def get_building_details(
     session: SessionDep,
+    including: Annotated[dict, Depends(include_parameters(Building))],
     fielding: Annotated[dict, Depends(fields_parameters(Building))],
     export: Annotated[dict, Depends(export_parameters)],
     building_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'locations'. Repeatable for multiple relations."),
 ):
     """Retrieve detailed information about a specific building by its ID."""
     get_or_404(session, Building, building_id, "Building")
     query = select(Building).where(Building.id == building_id)
-    items = filter_query(session, query, fielding, Building)
+    items = filter_query(session, query, fielding, Building, including)
     return items[0] if items else None
 
 @room_router.get("/{building_id}/locations", summary="List locations for a building")
 def get_building_locations(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Location))],
+    including: Annotated[dict, Depends(include_parameters(Location))],
     fielding: Annotated[dict, Depends(fields_parameters(Location))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     building_id: int,
-    include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'events'. Repeatable for multiple relations."),
 ):
     """Retrieve a list of locations associated with a specific building."""
     query = select(Location).where(Location.building_id == building_id)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Location)
-    items = filter_query(session, query, fielding, Location)
+    items = filter_query(session, query, fielding, Location, including)
     return build_list_response(data, items, export)
 
 @room_router.get("/distinct/{field_name}", summary="Get distinct values")
