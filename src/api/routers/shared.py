@@ -120,3 +120,36 @@ def page_query(session: SessionDep, query, paging: dict):
         "limit": count,
         "total_pages": 1,
         }, query
+    
+def filter_query(session: SessionDep, query, filtering: dict, model_class: type):
+    # Verify that filtering keys are valid model fields
+    valid_fields = set(model_class.model_fields.keys())
+    for key in filtering["fields"] or []:
+        if key not in valid_fields:
+            raise ValueError(f"Invalid filter field: {key}. Valid fields are: {', '.join(valid_fields)}")
+
+    # Get unfiltered items to apply field selection
+    unfiltered_items = session.exec(query).all()
+    # Fallback
+    selected_fields = sorted(filtering["fields"] or valid_fields)
+    # Apply filters to the query and return only the selected fields
+    items = [
+        {
+            field: module.model_dump().get(field)
+            for field in selected_fields
+        }
+        for module in unfiltered_items
+    ]
+    return items
+
+def sort_query(query, sorting: dict, model_class: type):
+    """Apply sorting to the query based on the provided sorting parameters."""
+    sort_field = sorting.get("sort")
+    if sort_field:
+        sort_column = getattr(model_class, sort_field, None)
+        if sort_column is not None:
+            if sorting.get("order") == "desc":
+                return query.order_by(sort_column.desc())
+            else:
+                return query.order_by(sort_column.asc())
+    return query

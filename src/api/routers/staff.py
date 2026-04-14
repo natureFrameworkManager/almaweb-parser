@@ -6,7 +6,7 @@ from sqlalchemy import or_
 
 from database.database import SessionDep
 from database.model import Staff
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters
+from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/staff", tags=["Staff"])
 def get_staff(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Staff))],
+    filtering: Annotated[dict, Depends(fields_parameters(Staff))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     ids: list[int] | None = Query(None, description="Staff ID values (repeatable; OR within this filter)."),
@@ -35,20 +36,14 @@ def get_staff(
     if modules:
         query = query.where(or_(*[Staff.modules.any(Module.id == value) for value in modules])) # type: ignore
     data, query = page_query(session, query, paging)
-    sort_field = sorting.get("sort")
-    if sort_field:
-        sort_column = getattr(Staff, sort_field, None)
-        if sort_column is not None:
-            if sorting.get("order") == "desc":
-                query = query.order_by(sort_column.desc())
-            else:
-                query = query.order_by(sort_column.asc())
+    query = sort_query(query, sorting, Staff)
+    items = filter_query(session, query, filtering, Staff)
     return {
         "count": data["count"],
         "page": data["page"],
         "limit": data["limit"],
         "total_pages": data["total_pages"],
-        "items": session.exec(query).all(),
+        "items": items,
     }
 
 @router.get("/{staff_id}", summary="Get staff details")
