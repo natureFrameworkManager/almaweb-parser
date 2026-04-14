@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Annotated
+from typing import cast
 from fastapi import Query
 from sqlmodel import func, select
 from database.database import SessionDep
@@ -12,6 +12,43 @@ class EventExportFormats(str, Enum):
     json = "json"
     csv = "csv"
     ical = "ical"
+
+def model_field_enum(model_class: type, enum_name: str | None = None) -> type[Enum]:
+    """
+    Build a string Enum from a SQLModel class fields for use in query parameters.
+
+    This allows FastAPI docs to present the model columns as selectable enum values.
+    """
+    name = enum_name or f"{model_class.__name__}Field"
+    return cast(type[Enum], Enum(name, {field: field for field in model_class.model_fields}, type=str))
+
+
+class SortOrder(str, Enum):
+    asc = "asc"
+    desc = "desc"
+
+
+def sort_parameters(model_class: type):
+    """
+    Build a FastAPI dependency for generic model sorting.
+
+    Returns a dependency function with:
+    - sort: enum of model columns
+    - order: asc | desc
+    """
+    SortField = model_field_enum(model_class, f"{model_class.__name__}SortField")
+    sort_values = [str(field.value) for field in SortField.__members__.values()]
+
+    def _sort_parameters(
+        sort: str | None = Query(None, description="Column to sort by.", enum=sort_values),
+        order: SortOrder = Query(SortOrder.asc, description="Sort direction: asc or desc."),
+    ):
+        return {
+            "sort": sort,
+            "order": order.value,
+        }
+
+    return _sort_parameters
 
 def export_parameters(
     format: ExportFormats | None = Query(None, description="Response format."),

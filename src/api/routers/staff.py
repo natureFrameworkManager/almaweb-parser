@@ -6,13 +6,14 @@ from sqlalchemy import or_
 
 from database.database import SessionDep
 from database.model import Staff
-from .shared import export_parameters, export_event_parameters, paging_parameters, page_query
+from .shared import export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
 @router.get("", summary="List all staff members")
 def get_staff(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Staff))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
     ids: list[int] | None = Query(None, description="Staff ID values (repeatable; OR within this filter)."),
@@ -20,7 +21,6 @@ def get_staff(
     events: list[int] | None = Query(None, description="Event ID values to filter staff associated with specific events (repeatable; OR within this filter)."),
     courses: list[int] | None = Query(None, description="Course ID values to filter staff associated with specific courses (repeatable; OR within this filter)."),
     modules: list[int] | None = Query(None, description="Module ID values to filter staff associated with specific modules (repeatable; OR within this filter)."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all staff members."""
     query = select(Staff)
@@ -35,6 +35,14 @@ def get_staff(
     if modules:
         query = query.where(or_(*[Staff.modules.any(Module.id == value) for value in modules])) # type: ignore
     data, query = page_query(session, query, paging)
+    sort_field = sorting.get("sort")
+    if sort_field:
+        sort_column = getattr(Staff, sort_field, None)
+        if sort_column is not None:
+            if sorting.get("order") == "desc":
+                query = query.order_by(sort_column.desc())
+            else:
+                query = query.order_by(sort_column.asc())
     return {
         "count": data["count"],
         "page": data["page"],

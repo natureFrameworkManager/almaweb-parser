@@ -1,21 +1,18 @@
-from collections import defaultdict
 from enum import Enum
 from typing import Any, Sequence, Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Depends
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.database import SessionDep
-from database.model import Course, Event, Module
+from database.model import Module
 from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
-from .shared import export_event_parameters, export_parameters, paging_parameters
+from .shared import export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
-ModuleField = Enum("ModuleField", {f: f for f in Module.model_fields})
+ModuleField = model_field_enum(Module)
 
 class IncludeOption(str, Enum):
     courses = "courses"
@@ -85,6 +82,7 @@ def _attach_module_relations(
 @router.get("", summary="List all modules", response_model=ModuleListResponseModel)
 def get_modules(
     session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(Module))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_parameters)],
     id: list[int] | None = Query(None, description="Module ID values (repeatable; OR within this filter)."),
@@ -112,7 +110,6 @@ def get_modules(
     updated_before: str | None = Query(None, description="Filter modules that have been updated before the given ISO 8601 datetime string."),
     include: list[IncludeOption] | None = Query(None, description="Related data to include: courses, events, staff. Repeatable for multiple relations."),
     fields: list[ModuleField] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
-    sort: SortOption | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """
     Retrieve a list of all modules
@@ -145,6 +142,15 @@ def get_modules(
         query = query.where(Module.credits >= credits_min)
     if credits_max is not None:
         query = query.where(Module.credits <= credits_max)
+
+    sort_field = sorting.get("sort")
+    if sort_field:
+        sort_column = getattr(Module, sort_field, None)
+        if sort_column is not None:
+            if sorting.get("order") == "desc":
+                query = query.order_by(sort_column.desc())
+            else:
+                query = query.order_by(sort_column.asc())
     # if path_search:
     #     # Normalize/Join JSON array like ["A","B"] into "A > B" for path substring search.
     #     normalized_path = func.replace(
