@@ -1,8 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
+from sqlmodel import select
+from sqlalchemy import or_
 
 from database.database import SessionDep
+from database.model import Location, Building, Event
 from .shared import export_parameters, paging_parameters
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"])
@@ -25,7 +28,28 @@ def get_locations(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all locations."""
-    pass
+    query = select(Location)
+
+    if ids:
+        query = query.where(or_(*[Location.id == value for value in ids])) # type: ignore
+    if names:
+        query = query.where(or_(*[Location.name.ilike(f"%{value}%") for value in names])) # type: ignore
+    if external_ids:
+        query = query.where(or_(*[Location.external_id.ilike(f"%{value}%") for value in external_ids])) # type: ignore
+    if types:
+        query = query.where(or_(*[Location.type.ilike(f"%{value}%") for value in types])) # type: ignore
+    if seats_min is not None:
+        query = query.where(Location.seats >= seats_min) # type: ignore
+    if seats_max is not None:
+        query = query.where(Location.seats <= seats_max) # type: ignore
+    if size_min is not None:
+        query = query.where(Location.size >= size_min) # type: ignore
+    if size_max is not None:
+        query = query.where(Location.size <= size_max) # type: ignore
+    if building_ids:
+        query = query.where(or_(*[Location.building_id == value for value in building_ids])) # type: ignore
+
+    return session.exec(query).all()
 
 @location_router.get("/{location_id}", summary="Get location details")
 def get_location_details(
@@ -36,7 +60,8 @@ def get_location_details(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific location by its ID."""
-    pass
+    query = select(Location).where(Location.id == location_id)
+    return session.exec(query).first()
 
 @location_router.get("/{location_id}/events", summary="List events for a location")
 def get_location_events(
@@ -49,7 +74,8 @@ def get_location_events(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events associated with a specific location."""
-    pass
+    query = select(Event).where(Event.location_id == location_id)
+    return session.exec(query).all()
 
 @location_router.get("/{location_id}/building", summary="Get building details for a location")
 def get_location_building(
@@ -62,7 +88,10 @@ def get_location_building(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve building details for a specific location."""
-    pass
+    location = session.exec(select(Location).where(Location.id == location_id)).first()
+    if location and location.building_id:
+        return session.exec(select(Building).where(Building.id == location.building_id)).first()
+    return None
 
 @location_router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_location_distinct_field(
@@ -103,7 +132,20 @@ def get_buildings(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all buildings."""
-    pass
+    query = select(Building)
+
+    if ids:
+        query = query.where(or_(*[Building.id == value for value in ids])) # type: ignore
+    if names:
+        query = query.where(or_(*[Building.name.ilike(f"%{value}%") for value in names])) # type: ignore
+    if short_names:
+        query = query.where(or_(*[Building.short_name.ilike(f"%{value}%") for value in short_names])) # type: ignore
+    if addresses:
+        query = query.where(or_(*[Building.address.ilike(f"%{value}%") for value in addresses])) # type: ignore
+    if location_ids:
+        query = query.join(Location).where(or_(*[Location.id == value for value in location_ids])) # type: ignore
+
+    return session.exec(query).all()
 
 @room_router.get("/{building_id}", summary="Get building details")
 def get_building_details(
@@ -114,7 +156,7 @@ def get_building_details(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific building by its ID."""
-    pass
+    return session.exec(select(Building).where(Building.id == building_id)).first()
 
 @room_router.get("/{building_id}/locations", summary="List locations for a building")
 def get_building_locations(
@@ -127,7 +169,7 @@ def get_building_locations(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'seats_desc'."),
 ):
     """Retrieve a list of locations associated with a specific building."""
-    pass
+    return session.exec(select(Location).where(Location.building_id == building_id)).all()
 
 @room_router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_building_distinct_field(

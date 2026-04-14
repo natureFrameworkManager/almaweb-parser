@@ -1,8 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
+from sqlmodel import select
+from sqlalchemy import or_
 
 from database.database import SessionDep
+from database.model import Faculty, Degree
 from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/faculties", tags=["Faculties"])
@@ -18,7 +21,14 @@ def get_faculties(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all faculties."""
-    pass
+    query = select(Faculty)
+    if ids:
+        query = query.where(or_(*[Faculty.id == value for value in ids])) # type: ignore
+    if names:
+        query = query.where(or_(*[Faculty.name.ilike(f"%{value}%") for value in names])) # type: ignore
+    if degrees:
+        query = query.where(or_(*[Faculty.degree_id == value for value in degrees])) # type: ignore
+    return session.exec(query).all()
 
 @router.get("/{faculty_id}", summary="Get faculty details")
 def get_faculty_details(
@@ -29,10 +39,11 @@ def get_faculty_details(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific faculty by its ID."""
-    pass
+    query = select(Faculty).where(Faculty.id == faculty_id)
+    return session.exec(query).first()
 
-@router.get("/{faculty_id}/courses", summary="List courses for a faculty")
-def get_faculty_courses(
+@router.get("/{faculty_id}/degrees", summary="List degrees for a faculty")
+def get_faculty_degrees(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
@@ -41,8 +52,9 @@ def get_faculty_courses(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
-    """Retrieve a list of courses associated with a specific faculty."""
-    pass
+    """Retrieve a list of degrees associated with a specific faculty."""
+    query = select(Degree).where(Degree.faculty_id == faculty_id)
+    return session.exec(query).all()
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_faculty_distinct_field(
@@ -52,7 +64,16 @@ def get_faculty_distinct_field(
     format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
 ):
     """Retrieve distinct values for a specific field across all faculties."""
-    pass
+    valid_fields = {"name", "prefix"}
+    if field_name not in valid_fields:
+        raise ValueError(f"Invalid field name. Valid options are: {', '.join(valid_fields)}")
+    
+    query = select(getattr(Faculty, field_name)).distinct()
+    if sort:
+        sort_column = getattr(Faculty, field_name)
+        query = query.order_by(sort_column.asc() if sort.lower() == "asc" else sort_column.desc())
+    
+    return session.exec(query).all()
 
 @router.get("/changes", summary="Get faculty changelog")
 def get_faculty_changes(

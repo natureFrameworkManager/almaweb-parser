@@ -1,8 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
+from sqlmodel import select
+from sqlalchemy import or_
 
 from database.database import SessionDep
+from database.model import Semester, Event, Course, Module
 from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/semesters", tags=["Semesters"])
@@ -17,7 +20,15 @@ def get_semesters(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'year_desc'."),
 ):
     """Retrieve a list of all semesters."""
-    pass
+    query = select(Semester)
+    if name:
+        query = query.where(or_(*[Semester.name.ilike(f"%{value}%") for value in name])) # type: ignore
+    if years:
+        query = query.where(or_(*[Semester.year == value for value in years])) # type: ignore
+    if terms:
+        query = query.where(or_(*[Semester.term.ilike(f"%{value}%") for value in terms])) # type: ignore
+
+    return session.exec(query).all()
 
 @router.get("/{semester_id}", summary="Get semester details")
 def get_semester_details(
@@ -28,7 +39,7 @@ def get_semester_details(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific semester by its ID."""
-    pass
+    return session.exec(select(Semester).where(Semester.id == semester_id)).first()
 
 @router.get("/{semester_id}/events", summary="List events for a semester")
 def get_semester_events(
@@ -40,8 +51,11 @@ def get_semester_events(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
-    """Retrieve a list of events associated with a specific semester."""
-    pass
+    """Retrieve a list of events associated with a specific semester with a many-to-many relationship."""
+    semester = session.exec(select(Semester).where(Semester.id == semester_id)).first()
+    if semester:
+        return semester.events # type: ignore
+    
 
 @router.get("/{semester_id}/courses", summary="List courses for a semester")
 def get_semester_courses(

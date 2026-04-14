@@ -53,32 +53,32 @@ def _attach_module_relations(
             item["courses"] = []
         return items
 
-    courses = session.exec(select(Course).where(Course.module_id.in_(module_ids))).all() # type: ignore
-    courses_by_module_id: dict[int, list[Course]] = defaultdict(list)
-    for course in courses:
-        courses_by_module_id[course.module_id].append(course)
+    # courses = session.exec(select(Course).where(Course.module_id.in_(module_ids))).all() # type: ignore
+    # courses_by_module_id: dict[int, list[Course]] = defaultdict(list)
+    # for course in courses:
+    #     courses_by_module_id[course.module_id].append(course)
 
-    course_ids = [course.id for course in courses if course.id is not None]
-    events_by_course_id: dict[int, list[Event]] = defaultdict(list)
-    if course_ids:
-        events = session.exec(select(Event).where(Event.course_id.in_(course_ids))).all() # type: ignore
-        for event in events:
-            events_by_course_id[event.course_id].append(event)
+    # course_ids = [course.id for course in courses if course.id is not None]
+    # events_by_course_id: dict[int, list[Event]] = defaultdict(list)
+    # if course_ids:
+    #     events = session.exec(select(Event).where(Event.course_id.in_(course_ids))).all() # type: ignore
+    #     for event in events:
+    #         events_by_course_id[event.course_id].append(event)
 
-    for module, item in zip(modules, items):
-        module_id = module.id
-        related_courses = courses_by_module_id.get(module_id, []) if module_id is not None else []
-        course_items: list[dict[str, Any]] = []
-        for course in related_courses:
-            course_id = course.id
-            related_events = events_by_course_id.get(course_id, []) if course_id is not None else []
-            course_items.append(
-                {
-                    **course.model_dump(),
-                    "events": [event.model_dump() for event in related_events],
-                }
-            )
-        item["courses"] = course_items
+    # for module, item in zip(modules, items):
+    #     module_id = module.id
+    #     related_courses = courses_by_module_id.get(module_id, []) if module_id is not None else []
+    #     course_items: list[dict[str, Any]] = []
+    #     for course in related_courses:
+    #         course_id = course.id
+    #         related_events = events_by_course_id.get(course_id, []) if course_id is not None else []
+    #         course_items.append(
+    #             {
+    #                 **course.model_dump(),
+    #                 "events": [event.model_dump() for event in related_events],
+    #             }
+    #         )
+    #     item["courses"] = course_items
 
     return items
 
@@ -310,7 +310,9 @@ def get_module_courses(
     """
     Retrieve a module courses.
     """
-    pass
+    module = session.exec(select(Module).where(Module.id == module_id)).first()
+    if module and module.courses:
+        return module.courses
 
 @router.get("/{module_id}/events", summary="Events linked to a module")
 def get_module_events(
@@ -328,7 +330,9 @@ def get_module_events(
     """
     Retrieve a module events.
     """
-    pass
+    module = session.exec(select(Module).where(Module.id == module_id)).first()
+    if module and module.courses:
+        return [event for course in module.courses if course.events is not None for event in course.events]
 
 @router.get("/{module_id}/staff", summary="Staff linked to a module")
 def get_module_staff(
@@ -343,7 +347,9 @@ def get_module_staff(
     """
     Retrieve a module staff.
     """
-    pass
+    module = session.exec(select(Module).where(Module.id == module_id)).first()
+    if module and module.responsible_persons:
+        return module.responsible_persons
 
 @router.get("/{module_id}/degrees", summary="Degrees linked to a module")
 def get_module_degrees(
@@ -358,7 +364,9 @@ def get_module_degrees(
     """
     Retrieve a module degrees.
     """
-    pass
+    module = session.exec(select(Module).where(Module.id == module_id)).first()
+    if module and module.degrees:
+        return module.degrees
 
 @router.get("/distinct/{field}", summary="Distinct values for a module field")
 def get_distinct_module_field(
@@ -384,6 +392,6 @@ def get_module_changes(
     format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
 ):
     """
-    Retrieve a module staff.
+    Retrieve a module changelog.
     """
     pass

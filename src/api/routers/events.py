@@ -5,9 +5,9 @@ from typing import Annotated, Any, Sequence
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from sqlmodel import select
-from datetime import date, time
+from datetime import date, time, timedelta
 import re
 
 from database.database import SessionDep
@@ -28,28 +28,28 @@ def _attach_event_relations(
     if not events or not include_parent:
         return items
 
-    course_ids = [event.course_id for event in events]
-    courses = session.exec(select(Course).where(Course.id.in_(course_ids))).all() # type: ignore
-    courses_by_id = {course.id: course for course in courses if course.id is not None}
+    # course_ids = [event.course_id for event in events]
+    # courses = session.exec(select(Course).where(Course.id.in_(course_ids))).all() # type: ignore
+    # courses_by_id = {course.id: course for course in courses if course.id is not None}
 
-    module_ids = [course.module_id for course in courses]
-    modules_by_id: dict[int, Module] = {}
-    if module_ids:
-        modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
-        modules_by_id = {module.id: module for module in modules if module.id is not None}
+    # module_ids = [course.module_id for course in courses]
+    # modules_by_id: dict[int, Module] = {}
+    # if module_ids:
+    #     modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
+    #     modules_by_id = {module.id: module for module in modules if module.id is not None}
 
-    for event, item in zip(events, items):
-        parent_course = courses_by_id.get(event.course_id)
-        parent_module = modules_by_id.get(parent_course.module_id) if parent_course else None
-        item["course"] = (
-            {
-                **parent_course.model_dump(),
-                "module": parent_module.model_dump() if parent_module else None,
-            }
-            if parent_course
-            else None
-        )
-        item["module"] = parent_module.model_dump() if parent_module else None
+    # for event, item in zip(events, items):
+    #     parent_course = courses_by_id.get(event.course_id)
+    #     parent_module = modules_by_id.get(parent_course.module_id) if parent_course else None
+    #     item["course"] = (
+    #         {
+    #             **parent_course.model_dump(),
+    #             "module": parent_module.model_dump() if parent_module else None,
+    #         }
+    #         if parent_course
+    #         else None
+    #     )
+    #     item["module"] = parent_module.model_dump() if parent_module else None
 
     return items
 
@@ -121,16 +121,16 @@ def get_events(
         query = query.where(Event.end_time >= parsed_overlap_time)
     if location:
         query = query.where(Event.location.ilike(f"%{location}%")) # type: ignore
-    if course_id is not None:
-        query = query.where(Event.course_id == course_id)
+    # if course_id is not None:
+    #     query = query.where(Event.course_id == course_id)
     if course_name:
         query = query.join(Course).where(Course.name.ilike(f"%{course_name}%")) # type: ignore
     if course_number:
         query = query.join(Course).where(Course.number.ilike(f"%{course_number}%")) # type: ignore
     if course_type:
         query = query.join(Course).where(Course.type.ilike(f"%{course_type}%")) # type: ignore
-    if module_id is not None:
-        query = query.join(Course).where(Course.module_id == module_id)
+    # if module_id is not None:
+    #     query = query.join(Course).where(Course.module_id == module_id)
     if module_name:
         query = query.join(Course).join(Module).where(Module.name.ilike(f"%{module_name}%")) # type: ignore
     if module_number:
@@ -224,7 +224,9 @@ def get_todays_events(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring today."""
-    pass
+    today = date.today()
+    query = select(Event).where(Event.event_date == today)
+    return session.exec(query).all()
 
 @router.get("/tomorrow", summary="List tomorrow's events")
 def get_tomorrows_events(
@@ -236,7 +238,9 @@ def get_tomorrows_events(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring tomorrow."""
-    pass
+    tomorrow = date.today() + timedelta(days=1)
+    query = select(Event).where(Event.event_date == tomorrow)
+    return session.exec(query).all()
 
 @router.get("/week", summary="List events for the current week")
 def get_weeks_events(
@@ -248,46 +252,60 @@ def get_weeks_events(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring in the current week (Monday to Sunday)."""
-    pass
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    end_of_week = start_of_week + timedelta(days=6)  # Sunday
+    query = select(Event).where(Event.event_date >= start_of_week).where(Event.event_date <= end_of_week)
+    return session.exec(query).all()
 
 @router.get("/day/{date}", summary="List events for a specific date")
 def get_events_by_date(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
-    date: str,
+    date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring on a specific date."""
-    pass
+    query = select(Event).where(Event.event_date == date)
+    return session.exec(query).all()
 
 @router.get("/week/{date}", summary="List events for a specific week")
 def get_events_by_week(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
-    date: str,
+    date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring in the week of a specific date (Monday to Sunday)."""
-    pass
+    start_of_week = date - timedelta(days=date.weekday())  # Monday
+    end_of_week = start_of_week + timedelta(days=6)  # Sunday
+    query = select(Event).where(Event.event_date >= start_of_week).where(Event.event_date <= end_of_week)
+    return session.exec(query).all()
 
 @router.get("/month/{date}", summary="List events for a specific month")
 def get_events_by_month(
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_parameters)],
-    date: str,
+    date: date,
     include: list[str] | None = Query(None, description="Include related entities in the response. Possible values: 'course', 'module'. Repeatable for multiple relations."),
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events occurring in the month of a specific date."""
-    pass
+    start_of_month = date.replace(day=1)
+    if date.month == 12:
+        start_of_next_month = start_of_month.replace(year=date.year + 1, month=1)
+    else:
+        start_of_next_month = start_of_month.replace(month=date.month + 1)
+    query = select(Event).where(Event.event_date >= start_of_month).where(Event.event_date < start_of_next_month)
+    return session.exec(query).all()
 
 @router.get("/{event_id}", summary="Get an event by ID", response_model=EventDetailResponseModel)
 def get_event(
@@ -343,7 +361,7 @@ def get_event(
 
     return event
 
-@router.get("/{event_id}/course", summary="Get course for an event")
+@router.get("/{event_id}/courses", summary="Get courses linked to an event")
 def get_event_course(
     session: SessionDep,
     event_id: int,
@@ -352,7 +370,9 @@ def get_event_course(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the course associated with a specific event."""
-    pass
+    event = session.exec(select(Event).where(Event.id == event_id)).first()
+    if event and event.courses:
+        return event.courses
 
 @router.get("/{event_id}/module", summary="Get module for an event")
 def get_event_module(
@@ -363,7 +383,9 @@ def get_event_module(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the module associated with a specific event."""
-    pass
+    event = session.exec(select(Event).where(Event.id == event_id)).first()
+    if event and event.courses:
+        return [module for course in event.courses if course.modules is not None for module in course.modules]
 
 @router.get("/{event_id}/staff", summary="Get staff for an event")
 def get_event_staff(
@@ -374,7 +396,9 @@ def get_event_staff(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the staff members associated with a specific event."""
-    pass
+    event = session.exec(select(Event).where(Event.id == event_id)).first()
+    if event and event.staff:
+        return event.staff
 
 @router.get("/{event_id}/location", summary="Get location for an event")
 def get_event_location(
@@ -384,7 +408,9 @@ def get_event_location(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve the location associated with a specific event."""
-    pass
+    event = session.exec(select(Event).where(Event.id == event_id)).first()
+    if event:
+        return event.location
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for an event field")
 def get_event_distinct_field(

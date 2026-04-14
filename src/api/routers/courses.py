@@ -28,29 +28,29 @@ def _attach_course_relations(
         return items
 
     course_ids = [course.id for course in courses if course.id is not None]
-    module_ids = [course.module_id for course in courses]
+    # module_ids = [course.module_id for course in courses]
 
     modules_by_id: dict[int, Module] = {}
-    if include_parent and module_ids:
-        modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
-        modules_by_id = {module.id: module for module in modules if module.id is not None}
+    # if include_parent and module_ids:
+    #     modules = session.exec(select(Module).where(Module.id.in_(module_ids))).all() # type: ignore
+    #     modules_by_id = {module.id: module for module in modules if module.id is not None}
 
     events_by_course_id: dict[int, list[Event]] = defaultdict(list)
-    if include_children and course_ids:
-        events = session.exec(select(Event).where(Event.course_id.in_(course_ids))).all() # type: ignore
-        for event in events:
-            events_by_course_id[event.course_id].append(event)
+    # if include_children and course_ids:
+    #     events = session.exec(select(Event).where(Event.course_id.in_(course_ids))).all() # type: ignore
+    #     for event in events:
+    #         events_by_course_id[event.course_id].append(event)
 
-    for course, item in zip(courses, items):
-        if include_parent:
-            parent_module = modules_by_id.get(course.module_id)
-            item["module"] = parent_module.model_dump() if parent_module else None
-        if include_children:
-            course_id = course.id
-            item["events"] = [
-                event.model_dump()
-                for event in (events_by_course_id.get(course_id, []) if course_id is not None else [])
-            ]
+    # for course, item in zip(courses, items):
+    #     if include_parent:
+    #         parent_module = modules_by_id.get(course.module_id)
+    #         item["module"] = parent_module.model_dump() if parent_module else None
+    #     if include_children:
+    #         course_id = course.id
+    #         item["events"] = [
+    #             event.model_dump()
+    #             for event in (events_by_course_id.get(course_id, []) if course_id is not None else [])
+    #         ]
 
     return items
 
@@ -92,9 +92,9 @@ def get_courses(
         query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if staff:
         query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
-    if has_events is not None:
-        events_exist = select(Event.id).where(Event.course_id == Course.id).exists()
-        query = query.where(events_exist if has_events else ~events_exist)
+    # if has_events is not None:
+    #     events_exist = select(Event.id).where(Event.course_id == Course.id).exists()
+    #     query = query.where(events_exist if has_events else ~events_exist)
     if weekly_hours_min is not None:
         query = query.where(Course.weekly_hours >= weekly_hours_min)
     if weekly_hours_max is not None:
@@ -277,10 +277,12 @@ def get_course_events(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'start_time_desc'."),
 ):
     """Retrieve a list of events associated with a specific course."""
-    pass
+    course = session.exec(select(Course).where(Course.id == course_id)).first()
+    if course:
+        return course.events
 
-@router.get("/{course_id}/module", summary="Get module for a course")
-def get_course_module(
+@router.get("/{course_id}/modules", summary="Get modules linked to a course")
+def get_course_modules(
     course_id: int,
     session: SessionDep,
     paging: Annotated[dict, Depends(paging_parameters)],
@@ -289,8 +291,10 @@ def get_course_module(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
-    """Retrieve the module associated with a specific course."""
-    pass
+    """Retrieve the modules associated with a specific course."""
+    course = session.exec(select(Course).where(Course.id == course_id)).first()
+    if course and course.modules:
+        return course.modules
 
 @router.get("/{course_id}/staff", summary="Get staff for a course")
 def get_course_staff(
@@ -303,7 +307,9 @@ def get_course_staff(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve the staff associated with a specific course."""
-    pass
+    course = session.exec(select(Course).where(Course.id == course_id)).first()
+    if course and course.staff:
+        return course.staff
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for a course field")
 def get_course_distinct_field(

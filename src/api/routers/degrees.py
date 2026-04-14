@@ -2,8 +2,11 @@ from tkinter.font import names
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
+from sqlmodel import select
+from sqlalchemy import or_
 
 from database.database import SessionDep
+from database.model import Degree, Module
 from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/degrees", tags=["Degrees"])
@@ -20,7 +23,16 @@ def get_degrees(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all degrees."""
-    pass
+    query = select(Degree)
+    if ids:
+        query = query.where(or_(*[Degree.id == value for value in ids])) # type: ignore
+    if names:
+        query = query.where(or_(*[Degree.name.ilike(f"%{value}%") for value in names])) # type: ignore
+    if faculty:
+        query = query.where(or_(*[Degree.faculty_id == value for value in faculty])) # type: ignore
+    if modules:
+        query = query.where(or_(*[Degree.modules.any(Module.id == value) for value in modules])) # type: ignore
+    return session.exec(query).all()
 
 @router.get("/{degree_id}", summary="Get degree details")
 def get_degree_details(
@@ -31,7 +43,8 @@ def get_degree_details(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific degree by its ID."""
-    pass
+    query = select(Degree).where(Degree.id == degree_id)
+    return session.exec(query).first()
 
 @router.get("/{degree_id}/modules", summary="List modules for a degree")
 def get_degree_modules(
@@ -44,7 +57,9 @@ def get_degree_modules(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of modules associated with a specific degree."""
-    pass
+    degree = session.exec(select(Degree).where(Degree.id == degree_id)).first()
+    if degree:
+        return degree.modules
 
 @router.get("/{degree_id}/faculty", summary="Get faculty for a degree")
 def get_degree_faculty(
@@ -57,7 +72,9 @@ def get_degree_faculty(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve faculty information associated with a specific degree."""
-    pass
+    degree = session.exec(select(Degree).where(Degree.id == degree_id)).first()
+    if degree and degree.faculty:
+        return degree.faculty
 
 @router.get("/distinct/{field_name}", summary="Get distinct values")
 def get_degree_distinct_field(

@@ -1,8 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
+from sqlmodel import select
+from sqlalchemy import or_
 
 from database.database import SessionDep
+from database.model import Staff
 from .shared import export_parameters, paging_parameters
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
@@ -20,7 +23,18 @@ def get_staff(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'id_desc'."),
 ):
     """Retrieve a list of all staff members."""
-    pass
+    query = select(Staff)
+    if ids:
+        query = query.where(or_(*[Staff.id == value for value in ids])) # type: ignore
+    if names:
+        query = query.where(or_(*[Staff.name.ilike(f"%{value}%") for value in names])) # type: ignore
+    if events:
+        query = query.where(or_(*[Staff.events.any(Event.id == value) for value in events])) # type: ignore
+    if courses:
+        query = query.where(or_(*[Staff.courses.any(Course.id == value) for value in courses])) # type: ignore
+    if modules:
+        query = query.where(or_(*[Staff.modules.any(Module.id == value) for value in modules])) # type: ignore
+    return session.exec(query).all()
 
 @router.get("/{staff_id}", summary="Get staff details")
 def get_staff_details(
@@ -31,7 +45,8 @@ def get_staff_details(
     fields: list[str] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
 ):
     """Retrieve detailed information about a specific staff member by their ID."""
-    pass
+    query = select(Staff).where(Staff.id == staff_id)
+    return session.exec(query).first()
 
 @router.get("/{staff_id}/events", summary="List events for a staff member")
 def get_staff_events(
@@ -44,7 +59,9 @@ def get_staff_events(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of events associated with a specific staff member."""
-    pass
+    staff = session.exec(select(Staff).where(Staff.id == staff_id)).first()
+    if staff:
+        return staff.events
 
 @router.get("/{staff_id}/courses", summary="List courses for a staff member")
 def get_staff_courses(
@@ -57,7 +74,9 @@ def get_staff_courses(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of courses associated with a specific staff member."""
-    pass
+    staff = session.exec(select(Staff).where(Staff.id == staff_id)).first()
+    if staff:
+        return staff.courses
 
 @router.get("/{staff_id}/modules", summary="List modules for a staff member")
 def get_staff_modules(
@@ -70,7 +89,9 @@ def get_staff_modules(
     sort: str | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
 ):
     """Retrieve a list of modules associated with a specific staff member as the responsible person."""
-    pass
+    staff = session.exec(select(Staff).where(Staff.id == staff_id)).first()
+    if staff:
+        return staff.modules
 
 @router.get("/distinct/{field_name}", summary="Get distinct values for a staff field")
 def get_staff_distinct_field(
