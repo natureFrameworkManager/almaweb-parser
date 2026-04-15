@@ -6,10 +6,11 @@ from sqlalchemy import or_
 
 from database.model import Staff, Event, Course, Module
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, StaffRead, EventRead, CourseRead, ModuleRead
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
-@router.get("", summary="List all staff members")
+@router.get("", summary="List all staff members", response_model=PaginatedResponse[StaffRead], response_model_exclude_unset=True)
 def get_staff(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Staff))],
@@ -40,7 +41,7 @@ def get_staff(
     items = filter_query(session, query, filtering, Staff, including)
     return build_list_response(data, items, export)
 
-@router.get("/{staff_id}", summary="Get staff details")
+@router.get("/{staff_id}", summary="Get staff details", response_model=StaffRead, response_model_exclude_unset=True)
 def get_staff_details(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Staff))],
@@ -54,7 +55,7 @@ def get_staff_details(
     items = filter_query(session, query, fielding, Staff, including)
     return items[0] if items else None
 
-@router.get("/{staff_id}/events", summary="List events for a staff member")
+@router.get("/{staff_id}/events", summary="List events for a staff member", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_staff_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -71,7 +72,7 @@ def get_staff_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/{staff_id}/courses", summary="List courses for a staff member")
+@router.get("/{staff_id}/courses", summary="List courses for a staff member", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)
 def get_staff_courses(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Course))],
@@ -88,7 +89,7 @@ def get_staff_courses(
     items = filter_query(session, query, fielding, Course, including)
     return build_list_response(data, items, export)
 
-@router.get("/{staff_id}/modules", summary="List modules for a staff member")
+@router.get("/{staff_id}/modules", summary="List modules for a staff member", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_staff_modules(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Module))],

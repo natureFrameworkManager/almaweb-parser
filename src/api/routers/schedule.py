@@ -5,10 +5,11 @@ from sqlmodel import select
 
 from database.model import Event
 from .shared import SessionDep, export_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response
+from schemas import PaginatedResponse, EventRead
 
 router = APIRouter(prefix="/schedule", tags=["Schedule"])
 
-@router.get("/weekly", summary="Get generic weekly schedule")
+@router.get("/weekly", summary="Get generic weekly schedule", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_weekly_schedule(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],

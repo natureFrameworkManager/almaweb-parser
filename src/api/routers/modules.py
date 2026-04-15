@@ -7,12 +7,13 @@ from sqlmodel import select
 
 from database.model import Module, Course, Event, Staff, Degree
 from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"])
 
 
-@router.get("", summary="List all modules")
+@router.get("", summary="List all modules", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_modules(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Module))],
@@ -80,7 +81,7 @@ def get_modules(
     return build_list_response(data, items, exports)
 
 
-@router.get("/{module_id}", summary="Get a module by ID")
+@router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleRead, response_model_exclude_unset=True)
 def get_module(
     module_id: int,
     session: SessionDep,
@@ -98,7 +99,7 @@ def get_module(
     items = filter_query(session, query, fielding, Module, including)
     return items[0] if items else None
 
-@router.get("/{module_id}/courses", summary="Courses linked to a module")
+@router.get("/{module_id}/courses", summary="Courses linked to a module", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)
 def get_module_courses(
     module_id: int,
     session: SessionDep,
@@ -117,7 +118,7 @@ def get_module_courses(
     items = filter_query(session, query, fielding, Course, including)
     return build_list_response(data, items, exports)
 
-@router.get("/{module_id}/events", summary="Events linked to a module")
+@router.get("/{module_id}/events", summary="Events linked to a module", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_module_events(
     module_id: int,
     session: SessionDep,
@@ -139,7 +140,7 @@ def get_module_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, exports)
 
-@router.get("/{module_id}/staff", summary="Staff linked to a module")
+@router.get("/{module_id}/staff", summary="Staff linked to a module", response_model=PaginatedResponse[StaffRead], response_model_exclude_unset=True)
 def get_module_staff(
     module_id: int,
     session: SessionDep,
@@ -158,7 +159,7 @@ def get_module_staff(
     items = filter_query(session, query, fielding, Staff, including)
     return build_list_response(data, items, exports)
 
-@router.get("/{module_id}/degrees", summary="Degrees linked to a module")
+@router.get("/{module_id}/degrees", summary="Degrees linked to a module", response_model=PaginatedResponse[DegreeRead], response_model_exclude_unset=True)
 def get_module_degrees(
     module_id: int,
     session: SessionDep,

@@ -6,10 +6,11 @@ from sqlalchemy import or_
 
 from database.model import Course, Degree, Faculty, Module
 from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, DegreeRead, ModuleRead, FacultyRead
 
 router = APIRouter(prefix="/degrees", tags=["Degrees"])
 
-@router.get("", summary="List all degrees")
+@router.get("", summary="List all degrees", response_model=PaginatedResponse[DegreeRead], response_model_exclude_unset=True)
 def get_degrees(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Degree))],
@@ -37,7 +38,7 @@ def get_degrees(
     items = filter_query(session, query, fielding, Degree, including)
     return build_list_response(data, items, export)
 
-@router.get("/{degree_id}", summary="Get degree details")
+@router.get("/{degree_id}", summary="Get degree details", response_model=DegreeRead, response_model_exclude_unset=True)
 def get_degree_details(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Degree))],
@@ -51,7 +52,7 @@ def get_degree_details(
     items = filter_query(session, query, fielding, Degree, including)
     return items[0] if items else None
 
-@router.get("/{degree_id}/modules", summary="List modules for a degree")
+@router.get("/{degree_id}/modules", summary="List modules for a degree", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_degree_modules(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Module))],
@@ -68,7 +69,7 @@ def get_degree_modules(
     items = filter_query(session, query, fielding, Module, including)
     return build_list_response(data, items, export)
 
-@router.get("/{degree_id}/faculty", summary="Get faculty for a degree")
+@router.get("/{degree_id}/faculty", summary="Get faculty for a degree", response_model=PaginatedResponse[FacultyRead], response_model_exclude_unset=True)
 def get_degree_faculty(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Faculty))],

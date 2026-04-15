@@ -6,10 +6,11 @@ from sqlalchemy import or_
 
 from database.model import Semester, Event, Course, Module
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, SemesterRead, EventRead, CourseRead, ModuleRead
 
 router = APIRouter(prefix="/semesters", tags=["Semesters"])
 
-@router.get("", summary="List all semesters")
+@router.get("", summary="List all semesters", response_model=PaginatedResponse[SemesterRead], response_model_exclude_unset=True)
 def get_semesters(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Semester))],
@@ -34,7 +35,7 @@ def get_semesters(
     items = filter_query(session, query, fielding, Semester, including)
     return build_list_response(data, items, export)
 
-@router.get("/{semester_id}", summary="Get semester details")
+@router.get("/{semester_id}", summary="Get semester details", response_model=SemesterRead, response_model_exclude_unset=True)
 def get_semester_details(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Semester))],
@@ -48,7 +49,7 @@ def get_semester_details(
     items = filter_query(session, query, fielding, Semester, including)
     return items[0] if items else None
 
-@router.get("/{semester_id}/events", summary="List events for a semester")
+@router.get("/{semester_id}/events", summary="List events for a semester", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_semester_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -66,7 +67,7 @@ def get_semester_events(
     return build_event_list_response(data, items, export)
     
 
-@router.get("/{semester_id}/courses", summary="List courses for a semester")
+@router.get("/{semester_id}/courses", summary="List courses for a semester", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)
 def get_semester_courses(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Course))],
@@ -83,7 +84,7 @@ def get_semester_courses(
     items = filter_query(session, query, fielding, Course, including)
     return build_list_response(data, items, export)
 
-@router.get("/{semester_id}/modules", summary="List modules for a semester")
+@router.get("/{semester_id}/modules", summary="List modules for a semester", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_semester_modules(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Module))],

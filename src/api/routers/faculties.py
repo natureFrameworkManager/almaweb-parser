@@ -6,10 +6,11 @@ from sqlalchemy import or_
 
 from database.model import Faculty, Degree
 from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, FacultyRead, DegreeRead
 
 router = APIRouter(prefix="/faculties", tags=["Faculties"])
 
-@router.get("", summary="List all faculties")
+@router.get("", summary="List all faculties", response_model=PaginatedResponse[FacultyRead], response_model_exclude_unset=True)
 def get_faculties(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Faculty))],
@@ -34,7 +35,7 @@ def get_faculties(
     items = filter_query(session, query, fielding, Faculty, including)
     return build_list_response(data, items, export)
 
-@router.get("/{faculty_id}", summary="Get faculty details")
+@router.get("/{faculty_id}", summary="Get faculty details", response_model=FacultyRead, response_model_exclude_unset=True)
 def get_faculty_details(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Faculty))],
@@ -48,7 +49,7 @@ def get_faculty_details(
     items = filter_query(session, query, fielding, Faculty, including)
     return items[0] if items else None
 
-@router.get("/{faculty_id}/degrees", summary="List degrees for a faculty")
+@router.get("/{faculty_id}/degrees", summary="List degrees for a faculty", response_model=PaginatedResponse[DegreeRead], response_model_exclude_unset=True)
 def get_faculty_degrees(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Degree))],

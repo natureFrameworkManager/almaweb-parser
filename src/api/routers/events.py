@@ -10,6 +10,7 @@ import re
 
 from database.model import Event, Course, Module, Staff, Location
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, EventRead, CourseRead, ModuleRead, StaffRead, LocationRead
 
 router = APIRouter(prefix="/events", tags=["Events"])
 
@@ -30,7 +31,7 @@ def parse_hhmm_time(value: str, param_name: str) -> time:
         raise HTTPException(status_code=400, detail=f"Invalid {param_name} format. Expected HH:MM.")
     return time(hours, minutes)
 
-@router.get("", summary="List all Events")
+@router.get("", summary="List all Events", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -102,7 +103,7 @@ def get_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, exports)
 
-@router.get("/today", summary="List today's events")
+@router.get("/today", summary="List today's events", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_todays_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -119,7 +120,7 @@ def get_todays_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/tomorrow", summary="List tomorrow's events")
+@router.get("/tomorrow", summary="List tomorrow's events", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_tomorrows_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -136,7 +137,7 @@ def get_tomorrows_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/week", summary="List events for the current week")
+@router.get("/week", summary="List events for the current week", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_weeks_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -155,7 +156,7 @@ def get_weeks_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/day/{date}", summary="List events for a specific date")
+@router.get("/day/{date}", summary="List events for a specific date", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events_by_date(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -172,7 +173,7 @@ def get_events_by_date(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/week/{date}", summary="List events for a specific week")
+@router.get("/week/{date}", summary="List events for a specific week", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events_by_week(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -191,7 +192,7 @@ def get_events_by_week(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/month/{date}", summary="List events for a specific month")
+@router.get("/month/{date}", summary="List events for a specific month", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events_by_month(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -213,7 +214,7 @@ def get_events_by_month(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/{event_id}", summary="Get an event by ID")
+@router.get("/{event_id}", summary="Get an event by ID", response_model=EventRead, response_model_exclude_unset=True)
 def get_event(
     event_id: int,
     session: SessionDep,
@@ -230,7 +231,7 @@ def get_event(
     items = filter_query(session, query, fielding, Event, including)
     return items[0] if items else None
 
-@router.get("/{event_id}/courses", summary="Get courses linked to an event")
+@router.get("/{event_id}/courses", summary="Get courses linked to an event", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)
 def get_event_course(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Course))],
@@ -247,7 +248,7 @@ def get_event_course(
     items = filter_query(session, query, fielding, Course, including)
     return build_list_response(data, items, export)
 
-@router.get("/{event_id}/module", summary="Get module for an event")
+@router.get("/{event_id}/module", summary="Get module for an event", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_event_module(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Module))],
@@ -264,7 +265,7 @@ def get_event_module(
     items = filter_query(session, query, fielding, Module, including)
     return build_list_response(data, items, export)
 
-@router.get("/{event_id}/staff", summary="Get staff for an event")
+@router.get("/{event_id}/staff", summary="Get staff for an event", response_model=PaginatedResponse[StaffRead], response_model_exclude_unset=True)
 def get_event_staff(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Staff))],
@@ -281,7 +282,7 @@ def get_event_staff(
     items = filter_query(session, query, fielding, Staff, including)
     return build_list_response(data, items, export)
 
-@router.get("/{event_id}/location", summary="Get location for an event")
+@router.get("/{event_id}/location", summary="Get location for an event", response_model=LocationRead, response_model_exclude_unset=True)
 def get_event_location(
     session: SessionDep,
     event_id: int,

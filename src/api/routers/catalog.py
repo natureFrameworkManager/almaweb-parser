@@ -6,10 +6,11 @@ from sqlalchemy import or_
 
 from database.model import EventType, Status
 from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response
+from schemas import PaginatedResponse, EventTypeRead, StatusRead
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
-@router.get("/event-types", summary="List all event types")
+@router.get("/event-types", summary="List all event types", response_model=PaginatedResponse[EventTypeRead], response_model_exclude_unset=True)
 def get_event_types(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(EventType))],
@@ -31,7 +32,7 @@ def get_event_types(
     return build_list_response(data, items, export)
 
 
-@router.get("/event-types/{event_type_id}", summary="Get event type details")
+@router.get("/event-types/{event_type_id}", summary="Get event type details", response_model=EventTypeRead, response_model_exclude_unset=True)
 def get_event_type_details(
     session: SessionDep,
     event_type_id: int,
@@ -40,7 +41,7 @@ def get_event_type_details(
     query = select(EventType).where(EventType.id == event_type_id)
     return session.exec(query).first()
 
-@router.get("/statuses", summary="List all event statuses")
+@router.get("/statuses", summary="List all event statuses", response_model=PaginatedResponse[StatusRead], response_model_exclude_unset=True)
 def get_event_statuses(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Status))],
@@ -61,7 +62,7 @@ def get_event_statuses(
     items = filter_query(session, query, fielding, Status)
     return build_list_response(data, items, export)
 
-@router.get("/statuses/{status_id}", summary="Get event status details")
+@router.get("/statuses/{status_id}", summary="Get event status details", response_model=StatusRead, response_model_exclude_unset=True)
 def get_event_status_details(
     session: SessionDep,
     status_id: int,

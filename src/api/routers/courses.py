@@ -8,11 +8,12 @@ from sqlmodel import select
 
 from database.model import Course, Event, Module, Staff
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, CourseRead, EventRead, ModuleRead, StaffRead
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
 
 
-@router.get("", summary="List all Courses")
+@router.get("", summary="List all Courses", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)
 def get_courses(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Course))],
@@ -71,7 +72,7 @@ def get_courses(
     return build_list_response(data, items, exports)
 
 
-@router.get("/{course_id}", summary="Get a course by ID")
+@router.get("/{course_id}", summary="Get a course by ID", response_model=CourseRead, response_model_exclude_unset=True)
 def get_course(
     course_id: int,
     session: SessionDep,
@@ -89,7 +90,7 @@ def get_course(
     items = filter_query(session, query, fielding, Course, including)
     return items[0] if items else None
 
-@router.get("/{course_id}/events", summary="List events for a course")
+@router.get("/{course_id}/events", summary="List events for a course", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_course_events(
     course_id: int,
     session: SessionDep,
@@ -106,7 +107,7 @@ def get_course_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, exports)
 
-@router.get("/{course_id}/modules", summary="Get modules linked to a course")
+@router.get("/{course_id}/modules", summary="Get modules linked to a course", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_course_modules(
     course_id: int,
     session: SessionDep,
@@ -123,7 +124,7 @@ def get_course_modules(
     items = filter_query(session, query, fielding, Module, including)
     return build_list_response(data, items, exports)
 
-@router.get("/{course_id}/staff", summary="Get staff for a course")
+@router.get("/{course_id}/staff", summary="Get staff for a course", response_model=PaginatedResponse[StaffRead], response_model_exclude_unset=True)
 def get_course_staff(
     course_id: int,
     session: SessionDep,

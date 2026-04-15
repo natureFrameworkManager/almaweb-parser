@@ -6,10 +6,11 @@ from sqlalchemy import or_
 
 from database.model import Location, Building, Event, Module
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from schemas import PaginatedResponse, LocationRead, BuildingRead, EventRead
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"])
 
-@location_router.get("", summary="List all locations")
+@location_router.get("", summary="List all locations", response_model=PaginatedResponse[LocationRead], response_model_exclude_unset=True)
 def get_locations(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Location))],
@@ -55,7 +56,7 @@ def get_locations(
     items = filter_query(session, query, fielding, Location, including)
     return build_list_response(data, items, export)
 
-@location_router.get("/{location_id}", summary="Get location details")
+@location_router.get("/{location_id}", summary="Get location details", response_model=LocationRead, response_model_exclude_unset=True)
 def get_location_details(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Location))],
@@ -69,7 +70,7 @@ def get_location_details(
     items = filter_query(session, query, fielding, Location, including)
     return items[0] if items else None
 
-@location_router.get("/{location_id}/events", summary="List events for a location")
+@location_router.get("/{location_id}/events", summary="List events for a location", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_location_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -86,7 +87,7 @@ def get_location_events(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@location_router.get("/{location_id}/building", summary="Get building details for a location")
+@location_router.get("/{location_id}/building", summary="Get building details for a location", response_model=BuildingRead, response_model_exclude_unset=True)
 def get_location_building(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Building))],
@@ -113,7 +114,7 @@ def get_location_distinct_field(
 
 room_router = APIRouter(prefix="/buildings", tags=["Buildings"])
 
-@room_router.get("", summary="List all buildings")
+@room_router.get("", summary="List all buildings", response_model=PaginatedResponse[BuildingRead], response_model_exclude_unset=True)
 def get_buildings(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Building))],
@@ -146,7 +147,7 @@ def get_buildings(
     items = filter_query(session, query, fielding, Building, including)
     return build_list_response(data, items, export)
 
-@room_router.get("/{building_id}", summary="Get building details")
+@room_router.get("/{building_id}", summary="Get building details", response_model=BuildingRead, response_model_exclude_unset=True)
 def get_building_details(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Building))],
@@ -160,7 +161,7 @@ def get_building_details(
     items = filter_query(session, query, fielding, Building, including)
     return items[0] if items else None
 
-@room_router.get("/{building_id}/locations", summary="List locations for a building")
+@room_router.get("/{building_id}/locations", summary="List locations for a building", response_model=PaginatedResponse[LocationRead], response_model_exclude_unset=True)
 def get_building_locations(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Location))],

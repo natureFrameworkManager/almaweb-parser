@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from sqlmodel import select, func
 
 from .shared import SessionDep
+from schemas import StatsResponse
 from database.model import Building, Course, Degree, Event, EventType, Faculty, Location, Module, Semester, Staff, Status, CourseEventLink, CourseStaffLink, EventStaffLink, ModuleCourseLink, ModuleDegreeLink, ModuleSemesterLink, ModuleStaffLink
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -11,7 +12,7 @@ def get_health():
     """Retrieve the health status of the system."""
     pass
 
-@router.get("/stats", summary="Get system statistics")
+@router.get("/stats", summary="Get system statistics", response_model=StatsResponse)
 def get_stats(
     session: SessionDep,
 ):
