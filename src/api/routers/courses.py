@@ -7,7 +7,6 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Course, Event, Module, Staff
-from schemas.courses import CourseDetailResponseModel, CourseListResponseModel
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
