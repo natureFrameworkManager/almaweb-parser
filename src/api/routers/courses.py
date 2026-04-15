@@ -13,7 +13,7 @@ from .shared import SessionDep, export_parameters, export_event_parameters, pagi
 router = APIRouter(prefix="/courses", tags=["Courses"])
 
 
-@router.get("", summary="List all Courses", response_model=CourseListResponseModel)
+@router.get("", summary="List all Courses")
 def get_courses(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Course))],
@@ -72,7 +72,7 @@ def get_courses(
     return build_list_response(data, items, exports)
 
 
-@router.get("/{course_id}", summary="Get a course by ID", response_model=CourseDetailResponseModel)
+@router.get("/{course_id}", summary="Get a course by ID")
 def get_course(
     course_id: int,
     session: SessionDep,

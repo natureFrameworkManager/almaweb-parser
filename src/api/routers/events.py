@@ -31,7 +31,7 @@ def parse_hhmm_time(value: str, param_name: str) -> time:
         raise HTTPException(status_code=400, detail=f"Invalid {param_name} format. Expected HH:MM.")
     return time(hours, minutes)
 
-@router.get("", summary="List all Events", response_model=EventListResponseModel)
+@router.get("", summary="List all Events")
 def get_events(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
@@ -214,7 +214,7 @@ def get_events_by_month(
     items = filter_query(session, query, fielding, Event, including)
     return build_event_list_response(data, items, export)
 
-@router.get("/{event_id}", summary="Get an event by ID", response_model=EventDetailResponseModel)
+@router.get("/{event_id}", summary="Get an event by ID")
 def get_event(
     event_id: int,
     session: SessionDep,

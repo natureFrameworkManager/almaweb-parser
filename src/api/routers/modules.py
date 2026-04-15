@@ -13,7 +13,7 @@ from .shared import SessionDep, export_event_parameters, export_parameters, pagi
 router = APIRouter(prefix="/modules", tags=["Modules"])
 
 
-@router.get("", summary="List all modules", response_model=ModuleListResponseModel)
+@router.get("", summary="List all modules")
 def get_modules(
     session: SessionDep,
     including: Annotated[dict, Depends(include_parameters(Module))],
@@ -81,7 +81,7 @@ def get_modules(
     return build_list_response(data, items, exports)
 
 
-@router.get("/{module_id}", summary="Get a module by ID", response_model=ModuleDetailResponseModel)
+@router.get("/{module_id}", summary="Get a module by ID")
 def get_module(
     module_id: int,
     session: SessionDep,
