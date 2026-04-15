@@ -304,17 +304,3 @@ def get_event_distinct_field(
 ):
     """Retrieve a list of distinct values for a specified event field."""
     pass
-
-@router.get("/changes", summary="List recent event changes")
-def get_event_changes(
-    session: SessionDep,
-    paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
-    since: str | None = Query(None, description="Filter changes that occurred after this timestamp (ISO 8601 format)."),
-    until: str | None = Query(None, description="Filter changes that occurred before this timestamp (ISO 8601 format)."),
-    include_deleted: bool = Query(False, description="Whether to include deleted events in the changelog."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
-    format: str | None = Query(None, description="Format of the returned changelog entries. Possible values: 'json' (default) or 'csv'."),
-):
-    """Retrieve a list of recent changes to events."""
-    pass

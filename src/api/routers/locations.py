@@ -110,19 +110,6 @@ def get_location_distinct_field(
     """Retrieve distinct values for a specific field across all locations."""
     pass
 
-@location_router.get("/changes", summary="Get location changelog")
-def get_location_changes(
-    session: SessionDep,
-    paging: Annotated[dict, Depends(paging_parameters)],
-    since: str = Query(..., description="Filter changes that occurred on or after this ISO 8601 datetime."),
-    until: str | None = Query(None, description="Filter changes that occurred on or before this ISO 8601 datetime."),
-    include_deleted: bool = Query(False, description="Whether to include deleted locations in the changelog."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
-):
-    """Retrieve a changelog of location modifications within a specified time range."""
-    pass
-
 
 room_router = APIRouter(prefix="/buildings", tags=["Buildings"])
 
@@ -198,17 +185,4 @@ def get_building_distinct_field(
     format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
 ):
     """Retrieve distinct values for a specific field across all buildings."""
-    pass
-
-@room_router.get("/changes", summary="Get building changelog")
-def get_building_changes(
-    session: SessionDep,
-    paging: Annotated[dict, Depends(paging_parameters)],
-    since: str = Query(..., description="Filter changes that occurred on or after this ISO 8601 datetime."),
-    until: str | None = Query(None, description="Filter changes that occurred on or before this ISO 8601 datetime."),
-    include_deleted: bool = Query(False, description="Whether to include deleted buildings in the changelog."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
-):
-    """Retrieve a changelog of building modifications within a specified time range."""
     pass

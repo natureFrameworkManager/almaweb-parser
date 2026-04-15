@@ -42,8 +42,6 @@ def get_modules(
     has_courses: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any courses."),
     has_events: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any events in their courses."),
     has_staff: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any staff assigned to them."),
-    updated_since: str | None = Query(None, description="Filter modules that have been updated since the given ISO 8601 datetime string."),
-    updated_before: str | None = Query(None, description="Filter modules that have been updated before the given ISO 8601 datetime string."),
 ):
     """
     Retrieve a list of all modules
@@ -190,20 +188,5 @@ def get_distinct_module_field(
 ):
     """
     Retrieve distinct values for a module field.
-    """
-    pass
-
-@router.get("/changes", summary="Get changelog")
-def get_module_changes(
-    session: SessionDep,
-    paging: Annotated[dict, Depends(paging_parameters)],
-    since: str = Query(..., description="Filter changes that occurred on or after this ISO 8601 datetime."),
-    until: str | None = Query(None, description="Filter changes that occurred before this ISO 8601 datetime."),
-    include_deleted: bool = Query(False, description="Whether to include deleted modules in the changelog."),
-    sort: list[str] | None = Query(None, description="Sort order for the results. For example, 'name_asc' or 'credits_desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
-):
-    """
-    Retrieve a module changelog.
     """
     pass

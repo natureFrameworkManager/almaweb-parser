@@ -94,16 +94,3 @@ def get_degree_distinct_field(
 ):
     """Retrieve distinct values for a specific field across all degrees."""
     pass
-
-@router.get("/changes", summary="Get degree changelog")
-def get_degree_changes(
-    session: SessionDep,
-    paging: Annotated[dict, Depends(paging_parameters)],
-    since: str = Query(..., description="Filter changes that occurred on or after this ISO 8601 datetime."),
-    until: str | None = Query(None, description="Filter changes that occurred on or before this ISO 8601 datetime."),
-    include_deleted: bool = Query(False, description="Whether to include deleted degrees in the changelog."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
-):
-    """Retrieve a changelog of degree modifications within a specified time range."""
-    pass

@@ -83,16 +83,3 @@ def get_faculty_distinct_field(
         query = query.order_by(sort_column.asc() if sort.lower() == "asc" else sort_column.desc())
     
     return session.exec(query).all()
-
-@router.get("/changes", summary="Get faculty changelog")
-def get_faculty_changes(
-    session: SessionDep,
-    paging: Annotated[dict, Depends(paging_parameters)],
-    since: str = Query(..., description="Filter changes that occurred on or after this ISO 8601 datetime."),
-    until: str | None = Query(None, description="Filter changes that occurred on or before this ISO 8601 datetime."),
-    include_deleted: bool = Query(False, description="Whether to include deleted faculties in the changelog."),
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'date_asc' or 'date_desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
-):
-    """Retrieve a changelog of faculty modifications within a specified time range."""
-    pass
