@@ -6,7 +6,6 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Module, Course, Event, Staff, Degree
-from schemas.modules import ModuleDetailResponseModel, ModuleListResponseModel
 from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 

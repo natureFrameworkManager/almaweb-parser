@@ -9,7 +9,6 @@ from datetime import date, time, timedelta
 import re
 
 from database.model import Event, Course, Module, Staff, Location
-from schemas.events import EventDetailResponseModel, EventListResponseModel
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
 
 router = APIRouter(prefix="/events", tags=["Events"])
