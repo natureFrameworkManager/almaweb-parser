@@ -138,3 +138,51 @@ All `/distinct/{field}` endpoints are stubs (empty `pass`) except `/faculties/di
   <details><summary>Details</summary>
   <code>GET /catalog/event-types/{id}</code> and <code>GET /catalog/statuses/{id}</code> don't validate existence. They should return 404 for missing IDs.
   </details>
+
+---
+
+## 5. Future Ideas
+
+> Items from [README.md](README.md) not already tracked above.
+
+### Crawler
+
+- [ ] Support crawling multiple faculties or semesters in a single run
+- [ ] Add a periodic re-crawl mechanism that updates existing records instead of requiring a full re-run
+- [ ] Add a `last_updated` timestamp to each datapoint
+- [ ] Better error handling and logging in the crawler to identify and recover from parsing issues
+
+### API — Filters
+
+- [ ] Modules: filter by specific `path` segments or exact path prefixes instead of only free-text search
+- [ ] Modules: wire up declared but inactive filters (`faculty_id`, `semester_id`, `staff_id`, `course_id`, `has_courses`, `has_events`, `has_staff`)
+- [ ] Courses: filter by exact staff members within the parsed `staff` list
+- [ ] Events: filter by exact staff members within the parsed event `staff` list
+- [ ] Events: add normalized location filters to distinguish building, room, and free-text notes
+
+### API — Endpoints
+
+- [ ] Add `/api/modules/{id}/ical` shortcut to export a single module's timetable directly
+- [ ] Expose a room/location schedule endpoint (all events in a given room on a given day)
+
+### Data Model
+
+- [ ] Handle courses of multiple modules with a many-to-many relationship where necessary
+- [ ] Parse degree and semester information from the path or other sources
+- [ ] Normalize events to a single week pattern and time slot format by collapsing dates
+- [ ] Optimize event storage (57k+ entries per semester)
+
+### iCal Export
+
+- [ ] Fix event SUMMARY for events with empty names by resolving titles from linked courses/modules
+- [ ] Add `ical_title_mode` to control title assembly strategy (event / course / module / smart)
+- [ ] Expand format placeholders to include `{course_name}`, `{module_name}`, `{staff_names}`, etc.
+- [ ] Add `ical_fan_out` parameter to emit one VEVENT per course/module pair
+- [ ] Add `ical_calendar_name`, `ical_timezone`, `ical_filename`, `ical_categories` parameters
+- [ ] Add named presets via `ical_template` (compact / detailed / minimal)
+
+### Infrastructure
+
+- [ ] Add tests
+- [ ] Containerize with Docker
+- [ ] Make endpoints compatible with the [planer app](https://github.com/natureFrameworkManager/planer)
