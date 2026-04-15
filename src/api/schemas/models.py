@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, time
 
+from pydantic import ConfigDict
+
 from .shared import ReadSchema
 
 
@@ -12,12 +14,22 @@ from .shared import ReadSchema
 class EventTypeRead(ReadSchema):
     """Mirrors ``database.model.EventType``."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{"id": 1, "name": "Vorlesung"}]},
+    )
+
     id: int | None = None
     name: str | None = None
 
 
 class StatusRead(ReadSchema):
     """Mirrors ``database.model.Status``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{"id": 1, "name": "almawe "}, {"id": 2, "name": "ok"}, {"id": 3, "name": "tok"}]},
+    )
 
     id: int | None = None
     name: str | None = None
@@ -30,6 +42,11 @@ class StatusRead(ReadSchema):
 class StaffRead(ReadSchema):
     """Mirrors ``database.model.Staff``."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{"id": 1, "name": "Prof. Dr. Max Mustermann"}]},
+    )
+
     id: int | None = None
     name: str | None = None
     # Relationships (populated via ?include=)
@@ -40,6 +57,11 @@ class StaffRead(ReadSchema):
 
 class SemesterRead(ReadSchema):
     """Mirrors ``database.model.Semester``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{"id": 1, "name": "WiSe 2025/26", "year": 2025, "term": "WiSe"}]},
+    )
 
     id: int | None = None
     name: str | None = None
@@ -52,6 +74,11 @@ class SemesterRead(ReadSchema):
 class FacultyRead(ReadSchema):
     """Mirrors ``database.model.Faculty``."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{"id": 1, "name": "Fakultät für Mathematik und Informatik", "prefix": 10}]},
+    )
+
     id: int | None = None
     name: str | None = None
     prefix: int | None = None
@@ -62,6 +89,16 @@ class FacultyRead(ReadSchema):
 
 class BuildingRead(ReadSchema):
     """Mirrors ``database.model.Building``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "name": "Augusteum",
+            "short_name": "AUG",
+            "address": "Augustusplatz 10, 04109 Leipzig",
+        }]},
+    )
 
     id: int | None = None
     name: str | None = None
@@ -74,6 +111,11 @@ class BuildingRead(ReadSchema):
 class DegreeRead(ReadSchema):
     """Mirrors ``database.model.Degree``."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{"id": 1, "name": "Informatik (Bachelor of Science)", "faculty_id": 1}]},
+    )
+
     id: int | None = None
     name: str | None = None
     faculty_id: int | None = None
@@ -84,6 +126,21 @@ class DegreeRead(ReadSchema):
 
 class LocationRead(ReadSchema):
     """Mirrors ``database.model.Location``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "name": "Hörsaal 1",
+            "external_id": "AUG-HS1",
+            "description": "Großer Hörsaal im Augusteum",
+            "type": "Hörsaal",
+            "seats": 300,
+            "size": 450.0,
+            "accessibility": "barrierefrei",
+            "building_id": 1,
+        }]},
+    )
 
     id: int | None = None
     name: str | None = None
@@ -101,6 +158,19 @@ class LocationRead(ReadSchema):
 
 class EventRead(ReadSchema):
     """Mirrors ``database.model.Event``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "number": "10-INF-B-001-V",
+            "name": "Algorithmen und Datenstrukturen",
+            "start_time": "09:15:00",
+            "end_time": "10:45:00",
+            "event_date": "2025-11-03",
+            "location_id": 1,
+        }]},
+    )
 
     id: int | None = None
     number: str | None = None
@@ -123,6 +193,20 @@ class CourseRead(ReadSchema):
     ``?include=status``, the integer is replaced by the nested object.
     """
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "name": "Algorithmen und Datenstrukturen",
+            "number": "10-INF-B-001",
+            "type": 1,
+            "weekday": 1,
+            "weekly_hours": 4,
+            "language": "Deutsch",
+            "status": 1,
+        }]},
+    )
+
     id: int | None = None
     name: str | None = None
     number: str | None = None
@@ -139,6 +223,25 @@ class CourseRead(ReadSchema):
 
 class ModuleRead(ReadSchema):
     """Mirrors ``database.model.Module``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "name": "Algorithmen und Datenstrukturen 1",
+            "number": "10-201-2011",
+            "language": "Deutsch",
+            "duration_semesters": 1,
+            "credits": 10.0,
+            "frequency": "jedes Wintersemester",
+            "goals": "Grundlegende Kenntnisse über Algorithmen und Datenstrukturen",
+            "content": "Sortieralgorithmen, Graphenalgorithmen, Bäume, Hashing",
+            "exam_prerequisites": "Bestehen der Übungsaufgaben",
+            "prerequisites": {"mandatory": "Grundlagen der Programmierung"},
+            "faculty_id": 1,
+            "path": ["Root", "Informatik", "Informatik (Bachelor of Science)", "Pflichtmodule"],
+        }]},
+    )
 
     id: int | None = None
     name: str | None = None
