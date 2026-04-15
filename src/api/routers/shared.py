@@ -1,14 +1,16 @@
 import csv
 import io
 import json
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import cast
+from typing import Any, cast
 
 from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from icalendar import Calendar, Event as ICalEvent, Alarm
+from sqlalchemy.orm import selectinload
 from sqlalchemy import inspect as sa_inspect
 from sqlmodel import Session, func, select
 
@@ -32,6 +34,418 @@ def model_field_enum(model_class: type, enum_name: str | None = None) -> type[En
     name = enum_name or f"{model_class.__name__}Field"
     return cast(type[Enum], Enum(name, {field: field for field in model_class.model_fields}, type=str))
 
+def model_include_tree(model_class: type) -> dict[str, list[Any]]:
+    """
+    Build a nested relation tree for a SQLModel class.
+
+    The tree is based on SQLAlchemy relationships plus foreign key targets
+    that do not have an explicit SQLModel Relationship field yet.
+
+    Cycles are prevented per traversal branch so bidirectional links do not
+    recurse forever.
+    """
+    mapper = sa_inspect(model_class)
+    table_to_model = {
+        m.local_table.name: m.class_
+        for m in mapper.registry.mappers
+        if getattr(m.class_, "__table__", None) is not None
+    }
+
+    def _relation_targets(current_model: type) -> list[tuple[str, type]]:
+        current_mapper = sa_inspect(current_model)
+        targets: list[tuple[str, type]] = []
+        seen_names: set[str] = set()
+
+        # 1) Explicit relationships declared on the model.
+        for relation in current_mapper.relationships.values():
+            relation_name = relation.key
+            target_model = relation.entity.class_
+            if relation_name not in seen_names:
+                seen_names.add(relation_name)
+                targets.append((relation_name, target_model))
+
+        # 2) Foreign-key targets for fields without explicit relationships.
+        for column in current_mapper.columns:
+            for fk in column.foreign_keys:
+                relation_name = column.key[:-3] if column.key.endswith("_id") else column.key
+                target_model = table_to_model.get(fk.column.table.name)
+                if target_model is None or relation_name in seen_names:
+                    continue
+                seen_names.add(relation_name)
+                targets.append((relation_name, target_model))
+
+        return targets
+
+    def _build_tree(current_model: type, ancestors: set[type]) -> list[Any]:
+        branch: list[Any] = []
+        next_ancestors = ancestors | {current_model}
+
+        for relation_name, target_model in _relation_targets(current_model):
+            if target_model in ancestors:
+                continue
+
+            subtree = _build_tree(target_model, next_ancestors)
+            if subtree:
+                branch.append({relation_name: subtree})
+            else:
+                branch.append(relation_name)
+
+        return branch
+
+    return {model_class.__name__: _build_tree(model_class, set())}
+
+
+def _model_relation_targets(model_class: type) -> list[tuple[str, type]]:
+    """Return direct relation name -> model pairs for a SQLModel class."""
+    mapper = sa_inspect(model_class)
+    table_to_model = {
+        m.local_table.name: m.class_
+        for m in mapper.registry.mappers
+        if getattr(m.class_, "__table__", None) is not None
+    }
+
+    targets: list[tuple[str, type]] = []
+    seen_names: set[str] = set()
+
+    for relation in mapper.relationships.values():
+        relation_name = relation.key
+        target_model = relation.entity.class_
+        if relation_name not in seen_names:
+            seen_names.add(relation_name)
+            targets.append((relation_name, target_model))
+
+    for column in mapper.columns:
+        for fk in column.foreign_keys:
+            relation_name = column.key[:-3] if column.key.endswith("_id") else column.key
+            target_model = table_to_model.get(fk.column.table.name)
+            if target_model is None or relation_name in seen_names:
+                continue
+            seen_names.add(relation_name)
+            targets.append((relation_name, target_model))
+
+    return targets
+
+def _flatten_include_tree(include_tree: dict[str, list[Any]]) -> list[str]:
+    """Flatten a nested include tree into dot-notation paths."""
+    include_paths: list[str] = []
+
+    def _walk(nodes: list[Any], prefix: str = ""):
+        for node in nodes:
+            if isinstance(node, str):
+                path = f"{prefix}.{node}" if prefix else node
+                include_paths.append(path)
+                continue
+
+            if isinstance(node, dict):
+                for name, children in node.items():
+                    path = f"{prefix}.{name}" if prefix else name
+                    include_paths.append(path)
+                    if isinstance(children, list):
+                        _walk(children, path)
+
+    root_children = next(iter(include_tree.values()), [])
+    _walk(root_children)
+
+    # Keep order stable while deduplicating.
+    return list(dict.fromkeys(include_paths))
+
+
+def _dot_paths_enum(enum_name: str, values: list[str]) -> type[Enum]:
+    """Build a stable string Enum from dot-notation include paths."""
+    members: dict[str, str] = {}
+    for value in values:
+        base_name = re.sub(r"[^a-zA-Z0-9]", "_", value).upper()
+        if not base_name:
+            continue
+        if base_name[0].isdigit():
+            base_name = f"V_{base_name}"
+
+        name = base_name
+        suffix = 2
+        while name in members and members[name] != value:
+            name = f"{base_name}_{suffix}"
+            suffix += 1
+
+        members[name] = value
+
+    return cast(type[Enum], Enum(enum_name, members, type=str))
+
+
+def _related_field_paths(model_class: type) -> list[str]:
+    """Build dot-notation field paths for related models recursively."""
+    field_paths: list[str] = []
+
+    def _walk(current_model: type, prefix: str = "", ancestors: set[type] | None = None):
+        parent_ancestors = ancestors or set()
+        next_ancestors = parent_ancestors | {current_model}
+
+        for relation_name, target_model in _model_relation_targets(current_model):
+            if target_model in parent_ancestors:
+                continue
+
+            relation_prefix = f"{prefix}.{relation_name}" if prefix else relation_name
+            field_paths.append(relation_prefix)
+
+            for target_field in target_model.model_fields.keys():
+                field_paths.append(f"{relation_prefix}.{target_field}")
+
+            _walk(target_model, relation_prefix, next_ancestors)
+
+    _walk(model_class)
+    return list(dict.fromkeys(field_paths))
+
+
+def _resolve_dot_path_value(obj: Any, path: str) -> Any:
+    """Resolve a dot-notation path on SQLModel objects, dicts, and lists."""
+    current: Any = obj
+    parts = path.split(".")
+
+    for index, part in enumerate(parts):
+        if current is None:
+            return None
+
+        if isinstance(current, list):
+            remaining = ".".join(parts[index:])
+            return [_resolve_dot_path_value(item, remaining) for item in current]
+
+        if isinstance(current, dict):
+            current = current.get(part)
+            continue
+
+        current = getattr(current, part, None)
+
+    return current
+
+
+def _model_column_fields(model_class: type) -> list[str]:
+    """Return DB column names for a model class."""
+    return [column.key for column in sa_inspect(model_class).columns]
+
+
+def _fk_relation_target(model_class: type, relation_name: str) -> tuple[type, str] | None:
+    """Resolve a foreign-key-derived relation name to (target_model, fk_column)."""
+    mapper = sa_inspect(model_class)
+    table_to_model = {
+        m.local_table.name: m.class_
+        for m in mapper.registry.mappers
+        if getattr(m.class_, "__table__", None) is not None
+    }
+
+    for column in mapper.columns:
+        for fk in column.foreign_keys:
+            candidate = column.key[:-3] if column.key.endswith("_id") else column.key
+            if candidate != relation_name:
+                continue
+            target_model = table_to_model.get(fk.column.table.name)
+            if target_model is not None:
+                return target_model, column.key
+    return None
+
+
+def _relation_chain_from_path(model_class: type, path: str) -> list[str]:
+    """Extract the relation segment chain from a dot path."""
+    chain: list[str] = []
+    current_model = model_class
+
+    for token in path.split("."):
+        relationships = sa_inspect(current_model).relationships
+        if token in relationships:
+            chain.append(token)
+            current_model = relationships[token].entity.class_
+            continue
+
+        fk_target = _fk_relation_target(current_model, token)
+        if fk_target is not None:
+            chain.append(token)
+            current_model = fk_target[0]
+            continue
+
+        break
+
+    return chain
+
+
+def _relation_chains(model_class: type, include_paths: list[str], field_paths: list[str]) -> list[list[str]]:
+    """Collect unique relation chains from include and field selections."""
+    chains: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    for path in include_paths + field_paths:
+        chain = _relation_chain_from_path(model_class, path)
+        if not chain:
+            continue
+        key = tuple(chain)
+        if key in seen:
+            continue
+        seen.add(key)
+        chains.append(chain)
+
+    return chains
+
+
+def _query_with_relation_loads(query, model_class: type, chains: list[list[str]]):
+    """Attach selectinload options for explicit SQLAlchemy relationships."""
+    options = []
+
+    for chain in chains:
+        current_model = model_class
+        loader = None
+        valid = True
+
+        for relation_name in chain:
+            relationships = sa_inspect(current_model).relationships
+            if relation_name not in relationships:
+                # FK-only relations (without Relationship field) cannot be eager-loaded here.
+                valid = False
+                break
+
+            relation_attr = getattr(current_model, relation_name)
+            loader = selectinload(relation_attr) if loader is None else loader.selectinload(relation_attr)
+            current_model = relationships[relation_name].entity.class_
+
+        if valid and loader is not None:
+            options.append(loader)
+
+    if not options:
+        return query
+    return query.options(*options)
+
+
+def _new_projection_node() -> dict[str, Any]:
+    return {"__all__": False, "__fields__": set(), "__relations__": {}}
+
+
+def _projection_for_response(
+    model_class: type,
+    selected_fields: list[str] | None,
+    include_paths: list[str],
+) -> dict[str, Any]:
+    """Build a projection tree for final response serialization."""
+    projection = _new_projection_node()
+
+    def _ensure_relation_node(node: dict[str, Any], relation_name: str) -> dict[str, Any]:
+        relations = node["__relations__"]
+        if relation_name not in relations:
+            relations[relation_name] = _new_projection_node()
+        return relations[relation_name]
+
+    if selected_fields:
+        for path in selected_fields:
+            tokens = path.split(".")
+            current_model = model_class
+            current_node = projection
+
+            for idx, token in enumerate(tokens):
+                relationships = sa_inspect(current_model).relationships
+                fk_target = _fk_relation_target(current_model, token)
+
+                if token in relationships:
+                    current_node = _ensure_relation_node(current_node, token)
+                    current_model = relationships[token].entity.class_
+                    if idx == len(tokens) - 1:
+                        current_node["__all__"] = True
+                    continue
+
+                if fk_target is not None:
+                    current_node = _ensure_relation_node(current_node, token)
+                    current_model = fk_target[0]
+                    if idx == len(tokens) - 1:
+                        current_node["__all__"] = True
+                    continue
+
+                if idx == len(tokens) - 1:
+                    current_node["__fields__"].add(token)
+                break
+    else:
+        projection["__all__"] = True
+
+        for include_path in include_paths:
+            tokens = include_path.split(".")
+            current_model = model_class
+            current_node = projection
+
+            for token in tokens:
+                relationships = sa_inspect(current_model).relationships
+                fk_target = _fk_relation_target(current_model, token)
+
+                if token in relationships:
+                    current_node = _ensure_relation_node(current_node, token)
+                    current_node["__all__"] = True
+                    current_model = relationships[token].entity.class_
+                    continue
+
+                if fk_target is not None:
+                    current_node = _ensure_relation_node(current_node, token)
+                    current_node["__all__"] = True
+                    current_model = fk_target[0]
+                    continue
+
+                break
+
+    return projection
+
+
+def _relation_value(
+    session: SessionDep,
+    item: Any,
+    model_class: type,
+    relation_name: str,
+) -> tuple[Any, type | None, bool]:
+    """Get relation value plus metadata, supporting FK-only relations."""
+    relationships = sa_inspect(model_class).relationships
+    if relation_name in relationships:
+        relation = relationships[relation_name]
+        return getattr(item, relation_name, None), relation.entity.class_, bool(relation.uselist)
+
+    fk_target = _fk_relation_target(model_class, relation_name)
+    if fk_target is not None:
+        target_model, fk_column = fk_target
+        target_id = getattr(item, fk_column, None)
+        if target_id is None:
+            return None, target_model, False
+        return session.get(target_model, target_id), target_model, False
+
+    return None, None, False
+
+
+def _serialize_with_projection(
+    session: SessionDep,
+    item: Any,
+    model_class: type,
+    projection: dict[str, Any],
+) -> dict[str, Any]:
+    """Serialize one SQLModel item according to a projection tree."""
+    result: dict[str, Any] = {}
+
+    if projection["__all__"]:
+        field_names = _model_column_fields(model_class)
+    else:
+        field_names = sorted(projection["__fields__"])
+
+    for field_name in field_names:
+        result[field_name] = getattr(item, field_name, None)
+
+    for relation_name, relation_projection in projection["__relations__"].items():
+        relation_value, target_model, is_many = _relation_value(session, item, model_class, relation_name)
+        if target_model is None:
+            continue
+
+        if is_many:
+            if relation_value is None:
+                result[relation_name] = []
+            else:
+                result[relation_name] = [
+                    _serialize_with_projection(session, child, target_model, relation_projection)
+                    for child in relation_value
+                ]
+        else:
+            result[relation_name] = (
+                _serialize_with_projection(session, relation_value, target_model, relation_projection)
+                if relation_value is not None
+                else None
+            )
+
+    return result
 
 class SortOrder(str, Enum):
     asc = "asc"
@@ -65,17 +479,19 @@ def fields_parameters(model_class: type):
     Build a FastAPI dependency for generic field selection.
 
     Returns a dependency function with:
-    - fields: list of field names to include in the response
-    Supports dot-notation for filtering within included relations (e.g., courses.name).
+    - fields: list of model columns to include in the response
     """
-    valid_fields = (field for field in model_class.model_fields)
-    description = f"Fields to include. Base fields: {', '.join(valid_fields)}. Use dot-notation for include fields (e.g., courses.name)."
+    root_fields = list(model_class.model_fields.keys())
+    related_fields = _related_field_paths(model_class)
+    field_values = list(dict.fromkeys(root_fields + related_fields))
+
+    FieldEnum = _dot_paths_enum(f"{model_class.__name__}Field", field_values)
 
     def _fields_parameters(
-        fields: list[str] | None = Query(None, description=description),
+        fields: list[FieldEnum] | None = Query(None, description="Comma-separated list of fields to include in the response. If not provided, all fields will be included."), # type: ignore
     ):
         return {
-            "fields": fields,
+            "fields": [str(v.value) for v in fields] if fields else None,
         }
 
     return _fields_parameters
@@ -87,15 +503,13 @@ def include_parameters(model_class: type, virtual_includes: dict[str, type] | No
 
     Auto-discovers relationship names from the model and optionally adds virtual includes.
     """
-    mapper = sa_inspect(model_class)
-    rel_names = [rel.key for rel in mapper.relationships]
-    all_includes = list(rel_names)
-    if virtual_includes:
-        for name in virtual_includes:
-            if name not in all_includes:
-                all_includes.append(name)
 
-    IncludeEnum = cast(type[Enum], Enum(f"{model_class.__name__}Include", {name: name for name in all_includes}, type=str))
+    include_tree = model_include_tree(model_class)
+    include_values = _flatten_include_tree(include_tree)
+    if virtual_includes:
+        include_values.extend([key for key in virtual_includes.keys() if key not in include_values])
+
+    IncludeEnum = _dot_paths_enum(f"{model_class.__name__}IncludeField", include_values)
 
     def _include_parameters(
         include: list[IncludeEnum] | None = Query(None, description="Related data to include in the response. Repeatable for multiple relations."),  # type: ignore
@@ -160,80 +574,27 @@ def page_query(session: SessionDep, query, paging: dict):
         "total_pages": 1,
         }, query
     
-def _resolve_virtual_include(instance, inc_name: str, model_class: type):
-    """Resolve virtual includes (e.g., Event -> modules via courses)."""
-    if model_class.__name__ == "Event" and inc_name == "modules":
-        seen_ids: set[int] = set()
-        modules = []
-        for course in getattr(instance, "courses", []):
-            for module in getattr(course, "modules", []):
-                if module.id not in seen_ids:
-                    seen_ids.add(module.id)
-                    modules.append(module.model_dump())
-        return modules
-    return []
-
-
-def attach_includes(instances: list, items: list[dict], include_list: list[str], model_class: type, virtual_includes: dict[str, type] | None = None):
-    """Load and serialize related data for each include name, appending to item dicts."""
-    virtual_includes = virtual_includes or {}
-    for inc_name in include_list:
-        if inc_name in virtual_includes:
-            for instance, item in zip(instances, items):
-                item[inc_name] = _resolve_virtual_include(instance, inc_name, model_class)
-        else:
-            for instance, item in zip(instances, items):
-                related = getattr(instance, inc_name, None)
-                if related is None:
-                    item[inc_name] = None
-                elif isinstance(related, list):
-                    item[inc_name] = [r.model_dump() for r in related]
-                else:
-                    item[inc_name] = related.model_dump()
-
-
-def apply_field_filtering(items: list[dict], fields_list: list[str], include_names: list[str]):
-    """Filter fields within included relations using dot-notation (e.g., courses.name)."""
-    include_fields: dict[str, list[str]] = {}
-    for f in fields_list:
-        if "." in f:
-            inc_name, field_name = f.split(".", 1)
-            include_fields.setdefault(inc_name, []).append(field_name)
-    if not include_fields:
-        return
-    for item in items:
-        for inc_name, inc_field_list in include_fields.items():
-            if inc_name in item:
-                val = item[inc_name]
-                if isinstance(val, list):
-                    item[inc_name] = [{k: v for k, v in entry.items() if k in inc_field_list} for entry in val]
-                elif isinstance(val, dict):
-                    item[inc_name] = {k: v for k, v in val.items() if k in inc_field_list}
-
-
 def filter_query(session: SessionDep, query, filtering: dict, model_class: type, including: dict | None = None):
-    valid_fields = set(model_class.model_fields.keys())
-    all_fields = filtering.get("fields") or []
-    base_fields = [f for f in all_fields if "." not in f]
+    include_paths = including.get("include") if including else None
+    include_values = include_paths or []
+    selected_fields = filtering.get("fields")
 
-    for key in base_fields:
+    # Verify that filtering keys are valid model fields
+    valid_fields = set(model_class.model_fields.keys())
+    valid_fields.update(_related_field_paths(model_class))
+    for key in filtering["fields"] or []:
         if key not in valid_fields:
             raise ValueError(f"Invalid filter field: {key}. Valid fields are: {', '.join(valid_fields)}")
 
-    instances = session.exec(query).all()
-    selected_fields = sorted(base_fields or valid_fields)
+    # Preload requested relation chains where explicit relationships are available.
+    chains = _relation_chains(model_class, include_values, selected_fields or [])
+    query = _query_with_relation_loads(query, model_class, chains)
 
-    items = [
-        {field: inst.model_dump().get(field) for field in selected_fields}
-        for inst in instances
-    ]
+    # Get unfiltered items to apply field selection
+    unfiltered_items = session.exec(query).all()
 
-    include_list = (including or {}).get("include")
-    if include_list:
-        virtual_includes = (including or {}).get("virtual_includes")
-        attach_includes(list(instances), items, include_list, model_class, virtual_includes)
-        apply_field_filtering(items, all_fields, include_list)
-
+    projection = _projection_for_response(model_class, selected_fields, include_values)
+    items = [_serialize_with_projection(session, module, model_class, projection) for module in unfiltered_items]
     return items
 
 def sort_query(query, sorting: dict, model_class: type):
@@ -303,17 +664,7 @@ def build_event_list_response(data: dict, items: list[dict], export: dict):
         cal.add("version", "2.0")
 
         for item in items:
-            safe_item = defaultdict(str)
-            for k, v in item.items():
-                if isinstance(v, dict):
-                    for sub_key, sub_val in v.items():
-                        safe_item[f"{k}.{sub_key}"] = sub_val if sub_val is not None else ""
-                elif isinstance(v, list) and v and isinstance(v[0], dict):
-                    for i, entry in enumerate(v):
-                        for sub_key, sub_val in entry.items():
-                            safe_item[f"{k}.{i}.{sub_key}"] = sub_val if sub_val is not None else ""
-                else:
-                    safe_item[k] = str(v) if v is not None else ""
+            safe_item = defaultdict(str, {k: (v if v is not None else "") for k, v in item.items()})
 
             ical_event = ICalEvent()
             ical_event.add("uid", f"event-{item.get('id', 'unknown')}@almaweb-parser")
