@@ -134,7 +134,7 @@ All `/distinct/{field}` endpoints are stubs (empty `pass`) except `/faculties/di
   The stats endpoint fetches all rows into memory to count them. Should use <code>SELECT COUNT(*)</code> queries for performance.
   </details>
 
-- [ ] **Catalog single-item endpoints missing 404 handling**
+- [x] **Catalog single-item endpoints missing 404 handling**
   <details><summary>Details</summary>
   <code>GET /catalog/event-types/{id}</code> and <code>GET /catalog/statuses/{id}</code> don't validate existence. They should return 404 for missing IDs.
   </details>

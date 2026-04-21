@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import EventType, Status
-from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response
+from .shared import SessionDep, export_parameters, get_or_404, include_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response
 from schemas import PaginatedResponse, EventTypeRead, StatusRead
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
@@ -36,10 +36,15 @@ def get_event_types(
 def get_event_type_details(
     session: SessionDep,
     event_type_id: int,
+    including: Annotated[dict, Depends(include_parameters(EventType))],
+    fielding: Annotated[dict, Depends(fields_parameters(EventType))],
+    exports: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve detailed information about a specific event type by its ID."""
+    get_or_404(session, EventType, event_type_id, "EventType")
     query = select(EventType).where(EventType.id == event_type_id)
-    return session.exec(query).first()
+    items = filter_query(session, query, fielding, EventType, including)
+    return items[0] if items else None
 
 @router.get("/statuses", summary="List all event statuses", response_model=PaginatedResponse[StatusRead], response_model_exclude_unset=True)
 def get_event_statuses(
@@ -66,7 +71,12 @@ def get_event_statuses(
 def get_event_status_details(
     session: SessionDep,
     status_id: int,
+    including: Annotated[dict, Depends(include_parameters(Status))],
+    fielding: Annotated[dict, Depends(fields_parameters(Status))],
+    exports: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve detailed information about a specific event status by its ID."""
+    get_or_404(session, Status, status_id, "Status")
     query = select(Status).where(Status.id == status_id)
-    return session.exec(query).first()
+    items = filter_query(session, query, fielding, Status, including)
+    return items[0] if items else None
