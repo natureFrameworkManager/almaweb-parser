@@ -124,7 +124,7 @@ All `/distinct/{field}` endpoints are stubs (empty `pass`) except `/faculties/di
 
 ## 4. Code Quality & Bugs
 
-- [ ] **Typo in `admin.py`: variable `couts` should be `counts`**
+- [x] **Typo in `admin.py`: variable `couts` should be `counts`**
   <details><summary>Details</summary>
   In <code>src/api/routers/admin.py:21</code>, the stats dict is assigned to <code>couts</code> instead of <code>counts</code>. Works functionally but is a typo.
   </details>

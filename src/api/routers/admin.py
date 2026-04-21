@@ -17,7 +17,7 @@ def get_stats(
     session: SessionDep,
 ):
     """Retrieve various statistics about the system."""
-    couts = {
+    counts = {
         "buildings": len(session.exec(select(Building)).all()),
         "courses": len(session.exec(select(Course)).all()),
         "degrees": len(session.exec(select(Degree)).all()),
@@ -39,7 +39,7 @@ def get_stats(
             "module_staff": len(session.exec(select(ModuleStaffLink)).all()),
         }
     }
-    return couts
+    return counts
 
 @router.get("/sync", summary="List ingestion runs")
 def list_ingestion_runs():
