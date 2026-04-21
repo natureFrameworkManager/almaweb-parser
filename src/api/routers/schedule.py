@@ -3,9 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 
-from database.model import Event
-from .shared import SessionDep, export_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response
-from schemas import PaginatedResponse, EventRead
+from database.model import Event, EventStaffLink, CourseEventLink
+from .shared import SessionDep, export_event_parameters, include_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response
 
 router = APIRouter(prefix="/schedule", tags=["Schedule"])
 
@@ -13,10 +12,11 @@ router = APIRouter(prefix="/schedule", tags=["Schedule"])
 def get_weekly_schedule(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Event))],
+    including: Annotated[dict, Depends(include_parameters(Event))],
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
-    export: Annotated[dict, Depends(export_parameters)],
-    semester_id: int = Query(..., description="ID of the semester to retrieve the schedule for."),
+    exports: Annotated[dict, Depends(export_event_parameters)],
+    semester_id: int | None = Query(None, description="ID of the semester to retrieve the schedule for."),
     faculty_ids: list[int] | None = Query(None, description="Filter schedule by faculty IDs (repeatable; OR within this filter)."),
     degree_ids: list[int] | None = Query(None, description="Filter schedule by degree IDs (repeatable; OR within this filter)."),
     course_ids: list[int] | None = Query(None, description="Filter schedule by course IDs (repeatable; OR within this filter)."),
@@ -32,5 +32,5 @@ def get_weekly_schedule(
     query = select(Event)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event)
-    return build_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, including)
+    return build_list_response(data, items, exports)
