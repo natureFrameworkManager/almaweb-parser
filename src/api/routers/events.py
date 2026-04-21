@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 from sqlmodel import select
 from datetime import date, time, timedelta
 import re
@@ -46,7 +46,11 @@ def get_events(
     start_time: str | None = Query(None, description="Event start time (HH:MM)"),
     end_time: str | None = Query(None, description="Event end time (HH:MM)"),
     time_overlap: str | None = Query(None, description="Return events active at this time (HH:MM), i.e. start_time <= value <= end_time."),
+    location_id: int | None = Query(None, description="ID of the location where the event takes place"),
     location: str | None = Query(None, description="Event location (case-insensitive, partial match)"),
+    building_id: int | None = Query(None, description="ID of the building where the event takes place"),
+    building: str | None = Query(None, description="Name of the building where the event takes place (case-insensitive, partial match)"),
+    building_address: str | None = Query(None, description="Address of the building where the event takes place (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
     course_number: str | None = Query(None, description="Number of the course the event belongs to (case-insensitive, partial match)"),
@@ -81,22 +85,31 @@ def get_events(
         parsed_overlap_time = parse_hhmm_time(time_overlap, "time_overlap")
         query = query.where(Event.start_time <= parsed_overlap_time)
         query = query.where(Event.end_time >= parsed_overlap_time)
+    if location_id is not None:
+        query = query.where(Event.location_id == location_id)
     if location:
-        query = query.where(Event.location.ilike(f"%{location}%")) # type: ignore
-    # if course_id is not None:
-    #     query = query.where(Event.course_id == course_id)
+        # If event has location check if the location name matches
+        query = query.where(and_(Event.location is not None, Event.location.has(Location.name.ilike(f"%{location}%")))) # type: ignore
+    if building_id is not None:
+        query = query.where(and_(Event.location is not None, Event.location.has(Location.building_id == building_id))) # type: ignore
+    if building:
+        query = query.where(and_(Event.location is not None, Event.location.has(Location.building.has(Location.name.ilike(f"%{building}%"))))) # type: ignore
+    if building_address:
+        query = query.where(and_(Event.location is not None, Event.location.has(Location.building.has(Location.address.ilike(f"%{building_address}%"))))) # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id)) # type: ignore
     if course_name:
-        query = query.join(Course).where(Course.name.ilike(f"%{course_name}%")) # type: ignore
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%"))) # type: ignore
     if course_number:
-        query = query.join(Course).where(Course.number.ilike(f"%{course_number}%")) # type: ignore
+        query = query.where(Event.courses.any(Course.number.ilike(f"%{course_number}%"))) # type: ignore
     if course_type:
-        query = query.join(Course).where(Course.type.ilike(f"%{course_type}%")) # type: ignore
-    # if module_id is not None:
-    #     query = query.join(Course).where(Course.module_id == module_id)
+        query = query.where(Event.courses.any(Course.type.ilike(f"%{course_type}%"))) # type: ignore
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id))) # type: ignore
     if module_name:
-        query = query.join(Course).join(Module).where(Module.name.ilike(f"%{module_name}%")) # type: ignore
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%")))) # type: ignore
     if module_number:
-        query = query.join(Course).join(Module).where(Module.number.ilike(f"%{module_number}%")) # type: ignore
+        query = query.where(Event.courses.any(Course.modules.any(Module.number.ilike(f"%{module_number}%")))) # type: ignore
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)

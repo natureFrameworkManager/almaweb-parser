@@ -71,7 +71,7 @@ All `/distinct/{field}` endpoints are stubs (empty `pass`) except `/faculties/di
   The spec defines a <code>q</code> parameter on all collection endpoints for full-text search across primary text fields. No implementation exists.
   </details>
 
-- [ ] **Events: `course_id` and `module_id` filters commented out**
+- [x] **Events: `course_id` and `module_id` filters commented out**
   <details><summary>Details</summary>
   In the events router, direct filtering by <code>course_id</code> and <code>module_id</code> is commented out (lines 70-80). These are specified in the API spec.
   </details>
@@ -86,7 +86,7 @@ All `/distinct/{field}` endpoints are stubs (empty `pass`) except `/faculties/di
   In the modules router, filtering by responsible person (staff) is commented out (line 59).
   </details>
 
-- [ ] **Events: `building` filter not implemented**
+- [x] **Events: `building` filter not implemented**
   <details><summary>Details</summary>
   Spec allows filtering events by building name with partial match. Not present in the events router.
   </details>
