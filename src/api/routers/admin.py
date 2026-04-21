@@ -18,25 +18,25 @@ def get_stats(
 ):
     """Retrieve various statistics about the system."""
     counts = {
-        "buildings": len(session.exec(select(Building)).all()),
-        "courses": len(session.exec(select(Course)).all()),
-        "degrees": len(session.exec(select(Degree)).all()),
-        "events": len(session.exec(select(Event)).all()),
-        "event_types": len(session.exec(select(EventType)).all()),
-        "faculties": len(session.exec(select(Faculty)).all()),
-        "locations": len(session.exec(select(Location)).all()),
-        "modules": len(session.exec(select(Module)).all()),
-        "semesters": len(session.exec(select(Semester)).all()),
-        "staff": len(session.exec(select(Staff)).all()),
-        "statuses": len(session.exec(select(Status)).all()),
+        "buildings": session.exec(select(func.count()).select_from(Building)).one(),
+        "courses": session.exec(select(func.count()).select_from(Course)).one(),
+        "degrees": session.exec(select(func.count()).select_from(Degree)).one(),
+        "events": session.exec(select(func.count()).select_from(Event)).one(),
+        "event_types": session.exec(select(func.count()).select_from(EventType)).one(),
+        "faculties": session.exec(select(func.count()).select_from(Faculty)).one(),
+        "locations": session.exec(select(func.count()).select_from(Location)).one(),
+        "modules": session.exec(select(func.count()).select_from(Module)).one(),
+        "semesters": session.exec(select(func.count()).select_from(Semester)).one(),
+        "staff": session.exec(select(func.count()).select_from(Staff)).one(),
+        "statuses": session.exec(select(func.count()).select_from(Status)).one(),
         "links": {
-            "course_event": len(session.exec(select(CourseEventLink)).all()),
-            "course_staff": len(session.exec(select(CourseStaffLink)).all()),
-            "event_staff": len(session.exec(select(EventStaffLink)).all()),
-            "module_course": len(session.exec(select(ModuleCourseLink)).all()),
-            "module_degree": len(session.exec(select(ModuleDegreeLink)).all()),
-            "module_semester": len(session.exec(select(ModuleSemesterLink)).all()),
-            "module_staff": len(session.exec(select(ModuleStaffLink)).all()),
+            "course_event": session.exec(select(func.count()).select_from(CourseEventLink)).one(),
+            "course_staff": session.exec(select(func.count()).select_from(CourseStaffLink)).one(),
+            "event_staff": session.exec(select(func.count()).select_from(EventStaffLink)).one(),
+            "module_course": session.exec(select(func.count()).select_from(ModuleCourseLink)).one(),
+            "module_degree": session.exec(select(func.count()).select_from(ModuleDegreeLink)).one(),
+            "module_semester": session.exec(select(func.count()).select_from(ModuleSemesterLink)).one(),
+            "module_staff": session.exec(select(func.count()).select_from(ModuleStaffLink)).one(),
         }
     }
     return counts
