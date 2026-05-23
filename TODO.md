@@ -45,15 +45,15 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
 
 ### 2.3 Admin Endpoints
 
-- [ ] **`GET /admin/health`** — stub, returns nothing
+- [x] **`GET /admin/health`** — stub, returns nothing
   <details><summary>Details</summary>
   Spec expects a <code>HealthResponse</code> with status and database connectivity info. Currently the function body is <code>pass</code>.
   </details>
 
-- [ ] **`GET /admin/sync`** — list ingestion runs, stub
-- [ ] **`POST /admin/sync`** — trigger data ingestion, stub
-- [ ] **`GET /admin/sync/{run_id}`** — get ingestion run details, not implemented
-- [ ] **`POST /admin/sync/{run_id}/cancel`** — cancel ingestion run, not implemented
+- [x] **`GET /admin/sync`** — list ingestion runs, stub
+- [x] **`POST /admin/sync`** — trigger data ingestion, stub
+- [x] **`GET /admin/sync/{run_id}`** — get ingestion run details, not implemented
+- [x] **`POST /admin/sync/{run_id}/cancel`** — cancel ingestion run, not implemented
 
 - [ ] **`GET /catalog/faculties/{faculty_id}/modules`** — not implemented
   <details><summary>Details</summary>

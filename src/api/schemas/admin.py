@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -65,3 +67,26 @@ class StatsResponse(BaseModel):
     staff: int
     statuses: int
     links: LinkStats
+
+
+class SyncRunRead(BaseModel):
+    """Response schema for sync run endpoints."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "status": "completed",
+            "started_at": "2026-05-23T10:00:00Z",
+            "finished_at": "2026-05-23T10:05:42Z",
+            "log": "2026-05-23 10:00:01 [scrapy.core.engine] INFO: Spider opened\n...",
+            "error": "",
+        }]},
+    )
+
+    id: int
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    log: str = ""
+    error: str = ""

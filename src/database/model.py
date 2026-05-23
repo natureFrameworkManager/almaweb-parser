@@ -1,4 +1,4 @@
-from datetime import time, date
+from datetime import datetime, time, date, timezone
 
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, Relationship, SQLModel
@@ -220,3 +220,20 @@ class EventType(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
+
+
+class SyncRun(SQLModel, table=True):
+    """
+    A record of a single data ingestion (crawl) run.
+
+    Tracks the lifecycle of a Scrapy crawl triggered via the API, including its
+    current status, process ID (for cancellation), timing, and captured output.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    status: str = "pending"  # pending | running | completed | failed | cancelled
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    finished_at: datetime | None = None
+    pid: int | None = None  # OS process ID; None once the process has ended
+    log: str = ""  # Captured stdout + stderr from the crawl process
+    error: str = ""  # Error detail when status is "failed"
