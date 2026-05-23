@@ -156,6 +156,35 @@ class LocationRead(ReadSchema):
     events: list[EventRead] | None = None
 
 
+class WeeklyRead(ReadSchema):
+    """Mirrors ``database.model.Event``."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "number": "10-INF-B-001-V",
+            "name": "Algorithmen und Datenstrukturen",
+            "start_time": "09:15:00",
+            "end_time": "10:45:00",
+            "weekday": 1,
+            "location_id": 1,
+        }]},
+    )
+
+    id: int | None = None
+    number: str | None = None
+    name: str | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    weekday: int
+    location_id: int | None = None
+    # Relationships (populated via ?include=)
+    location: LocationRead | None = None
+    staff: list[StaffRead] | None = None
+    courses: list[CourseRead] | None = None
+
+
 class EventRead(ReadSchema):
     """Mirrors ``database.model.Event``."""
 
@@ -273,6 +302,7 @@ FacultyRead.model_rebuild()
 BuildingRead.model_rebuild()
 DegreeRead.model_rebuild()
 LocationRead.model_rebuild()
+WeeklyRead.model_rebuild()
 EventRead.model_rebuild()
 CourseRead.model_rebuild()
 ModuleRead.model_rebuild()

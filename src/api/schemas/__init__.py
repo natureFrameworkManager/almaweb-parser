@@ -8,6 +8,7 @@ from .models import (
     BuildingRead,
     DegreeRead,
     LocationRead,
+    WeeklyRead,
     EventRead,
     CourseRead,
     ModuleRead,
