@@ -28,6 +28,8 @@ def get_locations(
     size_max: float | None = Query(None, ge=0, description="Maximum size in square meters (inclusive)."),
     accessible: bool | None = Query(None, description="Whether the location is accessible (true or false)."),
     building_ids: list[int] | None = Query(None, description="Building ID values to filter locations within specific buildings (repeatable; OR within this filter)."),
+    event_id: list[int] | None = Query(None, description="Event ID values to filter locations associated with specific events (repeatable; OR within this filter)."),
+    has_events: bool | None = Query(None, description="Filter by whether a location has at least one event (true) or none (false)."),
 ):
     """Retrieve a list of all locations."""
     query = select(Location)
@@ -50,6 +52,11 @@ def get_locations(
         query = query.where(Location.size <= size_max) # type: ignore
     if building_ids:
         query = query.where(or_(*[Location.building_id == value for value in building_ids])) # type: ignore
+    if event_id:
+        query = query.where(or_(*[Location.events.any(Event.id == value) for value in event_id]))  # type: ignore
+    if has_events is not None:
+        exists_expr = Location.events.any()  # type: ignore
+        query = query.where(exists_expr if has_events else ~exists_expr)
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Location)

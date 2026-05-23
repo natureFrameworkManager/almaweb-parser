@@ -50,9 +50,9 @@ def get_courses(
         query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if staff:
         query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
-    # if has_events is not None:
-    #     events_exist = select(Event.id).where(Event.course_id == Course.id).exists()
-    #     query = query.where(events_exist if has_events else ~events_exist)
+    if has_events is not None:
+        events_exist = Course.events.any()  # type: ignore
+        query = query.where(events_exist if has_events else ~events_exist)
     if weekly_hours_min is not None:
         query = query.where(Course.weekly_hours >= weekly_hours_min)
     if weekly_hours_max is not None:

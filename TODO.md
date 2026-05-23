@@ -76,7 +76,7 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
   In the events router, direct filtering by <code>course_id</code> and <code>module_id</code> is commented out (lines 70-80). These are specified in the API spec.
   </details>
 
-- [ ] **Courses: `has_events` filter commented out**
+- [x] **Courses: `has_events` filter commented out**
   <details><summary>Details</summary>
   In the courses router, the <code>has_events</code> boolean filter is commented out (line 49). The spec requires it.
   </details>
@@ -96,12 +96,12 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
   The spec defines separate time-range parameters for start/end times. The implementation has <code>start_time</code> and <code>end_time</code> exact matches instead of ranges.
   </details>
 
-- [ ] **Staff: `has_courses`, `has_events` filters missing**
+- [x] **Staff: `has_courses`, `has_events` filters missing**
   <details><summary>Details</summary>
   The spec defines these filters on the staff list endpoint. The implementation only supports <code>ids</code>, <code>names</code>, and relation-based filters.
   </details>
 
-- [ ] **Locations: `event_id`, `has_events` filters missing**
+- [x] **Locations: `event_id`, `has_events` filters missing**
   <details><summary>Details</summary>
   The spec allows filtering locations by associated events. Not implemented.
   </details>

@@ -23,6 +23,8 @@ def get_staff(
     events: list[int] | None = Query(None, description="Event ID values to filter staff associated with specific events (repeatable; OR within this filter)."),
     courses: list[int] | None = Query(None, description="Course ID values to filter staff associated with specific courses (repeatable; OR within this filter)."),
     modules: list[int] | None = Query(None, description="Module ID values to filter staff associated with specific modules (repeatable; OR within this filter)."),
+    has_courses: bool | None = Query(None, description="Filter by whether a staff member has at least one associated course (true) or none (false)."),
+    has_events: bool | None = Query(None, description="Filter by whether a staff member has at least one associated event (true) or none (false)."),
 ):
     """Retrieve a list of all staff members."""
     query = select(Staff)
@@ -36,6 +38,12 @@ def get_staff(
         query = query.where(or_(*[Staff.courses.any(Course.id == value) for value in courses])) # type: ignore
     if modules:
         query = query.where(or_(*[Staff.modules.any(Module.id == value) for value in modules])) # type: ignore
+    if has_courses is not None:
+        exists_expr = Staff.courses.any()  # type: ignore
+        query = query.where(exists_expr if has_courses else ~exists_expr)
+    if has_events is not None:
+        exists_expr = Staff.events.any()  # type: ignore
+        query = query.where(exists_expr if has_events else ~exists_expr)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Staff)
     items = filter_query(session, query, filtering, Staff, including)
