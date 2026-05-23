@@ -140,6 +140,7 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
   </details>
 
 - [ ] Fix issue with parser of unsplit staff names
+- [ ] Fix issue with data model and parser creating events of different modules, staff and courses (many-to-many relationships/links not handled properly)
 
 ---
 
