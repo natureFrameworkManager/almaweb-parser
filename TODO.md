@@ -22,9 +22,9 @@
 - [ ] **`q` (free-text search) parameter not implemented**
   - All collection endpoints should support full-text search
 
-- [ ] **Weekly schedule: no day-grouping or deduplication logic**
+- [x] **Weekly schedule: no day-grouping or deduplication logic**
   - Spec requires events grouped by weekday into deduplicated recurring slots
 
-- [ ] **Implement real weekly schedule filter**
+- [x] **Implement real weekly schedule filter**
   - In `src/api/routers/schedule.py:31`, endpoint ignores all filter parameters
 
