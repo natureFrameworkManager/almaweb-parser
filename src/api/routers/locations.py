@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Location, Building, Event, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, LocationRead, BuildingRead, EventRead
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"], responses=PROBLEM_RESPONSES)
@@ -89,10 +89,11 @@ def get_location_events(
 ):
     """Retrieve a list of events associated with a specific location."""
     query = select(Event).where(Event.location_id == location_id)
+    ical_including = _ical_augment_including(including, export)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, export)
 
 @location_router.get("/{location_id}/building", summary="Get building details for a location", response_model=BuildingRead, response_model_exclude_unset=True)
 def get_location_building(

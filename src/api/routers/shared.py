@@ -3,13 +3,14 @@ import io
 import json
 import re
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date as date_type, datetime, timedelta
 from enum import Enum
-from typing import Any, cast
+from typing import Annotated, Any, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import HTTPException, Query
+from fastapi import HTTPException, Query, Request
 from fastapi.responses import Response
-from icalendar import Calendar, Event as ICalEvent, Alarm
+from icalendar import Calendar, Event as ICalEvent, Alarm, Timezone, TimezoneStandard, TimezoneDaylight
 from sqlalchemy.orm import selectinload
 from sqlalchemy import inspect as sa_inspect
 from sqlmodel import Session, func, select
@@ -43,6 +44,18 @@ class EventExportFormats(str, Enum):
 class SortOrder(str, Enum):
     asc = "asc"
     desc = "desc"
+
+class ICalTemplate(str, Enum):
+    compact = "compact"
+    detailed = "detailed"
+    minimal = "minimal"
+    custom = "custom"
+
+class ICalBusyStatus(str, Enum):
+    busy = "BUSY"
+    free = "FREE"
+    busy_tentative = "BUSY-TENTATIVE"
+    busy_unavailable = "BUSY-UNAVAILABLE"
 
 
 # ---------------------------------------------------------------------------
@@ -483,18 +496,58 @@ def export_parameters(
 
 
 def export_event_parameters(
+    request: Request,
     format: EventExportFormats | None = Query(None, description="Response format."),
-    ical_title_format: str | None = Query(None, description="Custom title format for iCal output, using placeholders like {name} and {number}. Ignored if format is not 'ical'."),
-    ical_location_format: str | None = Query(None, description="Custom location format for iCal output, using placeholders like {name} and {number}. Ignored if format is not 'ical'."),
-    ical_description_format: str | None = Query(None, description="Custom description format for iCal output, using placeholders like {name} and {number}. Ignored if format is not 'ical'."),
-    ical_reminder_minutes: int | None = Query(None, description="Number of minutes before the event to set an iCal reminder. Ignored if format is not 'ical'."),
+    ical_title_format: str | None = Query(None, description="iCal SUMMARY template. Supports placeholders: {name}, {number}, {course_name}, {module_name}, {staff_names}, {location_name}, {building_name}, {course_number}, {module_number}, {course_type}. Overrides auto-title when set."),
+    ical_location_format: str | None = Query(None, description="iCal LOCATION template. Same placeholders as ical_title_format."),
+    ical_description_format: str | None = Query(None, description="iCal DESCRIPTION template. Same placeholders as ical_title_format."),
+    ical_reminder_minutes: list[int] | None = Query(None, ge=0, le=10080, description="Minutes before event for VALARM reminders. Repeatable for multiple reminders (e.g. ?ical_reminder_minutes=15&ical_reminder_minutes=60). Must be 0–10080 (1 week)."),
+    ical_organizer: str | None = Query(None, description="ORGANIZER property value, e.g. 'MAILTO:registrar@uni-example.de'."),
+    ical_categories: str | None = Query(None, description="CATEGORIES value. Supports placeholders. E.g. 'University,{course_type}'."),
+    ical_filename: str = Query("events.ics", description="Filename for the Content-Disposition header."),
+    ical_calendar_name: str | None = Query(None, description="X-WR-CALNAME: calendar display name in calendar apps."),
+    ical_timezone: str = Query("Europe/Berlin", description="TZID for event datetimes, e.g. 'Europe/Berlin' or 'America/New_York'."),
+    ical_template: ICalTemplate | None = Query(None, description="Named preset that sets title/description/location formats at once. compact={course_name}; detailed={module_name} – {course_name} with description; minimal={name}; custom=use individual ical_*_format params."),
+    ical_color: str | None = Query(None, description="COLOR property (RFC 7986) for event tinting, e.g. '#3B82F6' or 'tomato'. Supported by Apple Calendar and Thunderbird."),
+    ical_busy_status: ICalBusyStatus | None = Query(None, description="TRANSP property: FREE → TRANSPARENT, others → OPAQUE. Controls free/busy visibility in Outlook/Google Calendar."),
+    ical_collapse_recurring: bool = Query(False, description="Collapse weekly-recurring events into a single VEVENT with RRULE:FREQ=WEEKLY. Requires courses to be included."),
+    ical_map: str | None = Query(None, description="JSON object mapping event IDs to module/course IDs for per-event title override. E.g. '{\"42\":7,\"43\":7}'. See ical_map_type."),
+    ical_map_type: str | None = Query("module", description="Whether ical_map values are module IDs ('module') or course IDs ('course').", enum=["module", "course"]),
+    ical_multi_value_separator: str = Query(" / ", description="Separator used when joining multiple course/module names in placeholders."),
 ):
+    # Validate timezone
+    tz_str = ical_timezone or "Europe/Berlin"
+    try:
+        ZoneInfo(tz_str)
+    except (ZoneInfoNotFoundError, KeyError):
+        raise HTTPException(status_code=422, detail=f"Unknown timezone: '{tz_str}'. Use a valid IANA timezone name.")
+
+    # Fix 11: parse ical_event_title[{id}] bracket params from raw query string
+    per_event_titles: dict[int, str] = {}
+    for key, val in request.query_params.items():
+        m = re.match(r"^ical_event_title\[(\d+)\]$", key)
+        if m:
+            per_event_titles[int(m.group(1))] = val
+
     return {
         "format": format,
         "ical_title_format": ical_title_format,
         "ical_location_format": ical_location_format,
         "ical_description_format": ical_description_format,
         "ical_reminder_minutes": ical_reminder_minutes,
+        "ical_organizer": ical_organizer,
+        "ical_categories": ical_categories,
+        "ical_filename": ical_filename,
+        "ical_calendar_name": ical_calendar_name,
+        "ical_timezone": tz_str,
+        "ical_template": ical_template,
+        "ical_color": ical_color,
+        "ical_busy_status": ical_busy_status,
+        "ical_collapse_recurring": ical_collapse_recurring,
+        "ical_map": ical_map,
+        "ical_map_type": ical_map_type or "module",
+        "ical_multi_value_separator": ical_multi_value_separator,
+        "ical_event_titles_map": per_event_titles,
     }
 
 
@@ -579,6 +632,191 @@ def get_or_404(session: Session, model_class: type, id: int, label: str = "Resou
     return item
 
 
+def _ical_augment_including(including: dict, export: dict) -> dict:
+    """When format=ical, auto-include courses, modules, staff and location so placeholders work."""
+    fmt = export.get("format")
+    if fmt is None or fmt.value != "ical":
+        return including
+    force = ["courses", "courses.modules", "courses.staff", "location", "location.building"]
+    current = list(including.get("include") or [])
+    augmented = current + [p for p in force if p not in current]
+    return {**including, "include": augmented}
+
+
+def _build_event_placeholders(item: dict, separator: str) -> defaultdict:
+    """Build expanded iCal placeholder dict from a serialized event item.
+
+    Populates direct scalar fields plus derived keys:
+      {course_name}, {course_number}, {course_type},
+      {module_name}, {module_number},
+      {staff_names}, {location_name}, {building_name}
+
+    Fix 12: if event.number starts with a course.number, that course is put first
+    (overriding id-sorted order) so singular placeholders reflect the owning course.
+    Fix 9/6: all names joined with *separator* for multi-value placeholders.
+    """
+    safe: defaultdict = defaultdict(str)
+    for k, v in item.items():
+        if not isinstance(v, (dict, list)):
+            safe[k] = str(v) if v is not None else ""
+
+    courses: list[dict] = sorted(item.get("courses") or [], key=lambda c: c.get("id") or 0)
+
+    # Fix 12: prefer course whose number is a non-empty prefix of event.number
+    event_number: str = item.get("number") or ""
+    preferred_course: dict | None = None
+    if event_number:
+        for c in courses:
+            cn = c.get("number") or ""
+            if cn and event_number.startswith(cn):
+                preferred_course = c
+                break
+    if preferred_course is not None:
+        # Reorder: preferred first, rest id-sorted
+        courses = [preferred_course] + [c for c in courses if c.get("id") != preferred_course.get("id")]
+
+    # Course placeholders (Fix 9/6 join, Fix 12 ordering)
+    safe["course_name"] = separator.join(c.get("name") or "" for c in courses if c.get("name"))
+    if courses:
+        safe["course_number"] = courses[0].get("number") or ""
+        safe["course_type"] = str(courses[0].get("type") or "")
+
+    # Module placeholders: collect from all courses in order, deduped by id.
+    # Fix 12 module level: within the preferred course, prefer the module whose
+    # number is a non-empty prefix of that course's number.
+    preferred_module: dict | None = None
+    if preferred_course is not None:
+        pc_number: str = preferred_course.get("number") or ""
+        if pc_number:
+            for m in sorted(preferred_course.get("modules") or [], key=lambda m: m.get("id") or 0):
+                mn = m.get("number") or ""
+                if mn and pc_number.startswith(mn):
+                    preferred_module = m
+                    break
+    all_modules: list[dict] = []
+    seen_module_ids: set = set()
+    for c in courses:
+        mods = sorted(c.get("modules") or [], key=lambda m: m.get("id") or 0)
+        if preferred_module is not None and c.get("id") == (preferred_course or {}).get("id"):
+            mods = [preferred_module] + [m for m in mods if m.get("id") != preferred_module.get("id")]
+        for m in mods:
+            mid = m.get("id")
+            if mid not in seen_module_ids:
+                seen_module_ids.add(mid)
+                all_modules.append(m)
+    safe["module_name"] = separator.join(m.get("name") or "" for m in all_modules if m.get("name"))
+    if all_modules:
+        safe["module_number"] = all_modules[0].get("number") or ""
+
+    # Staff names: event-level staff first, fall back to preferred course staff
+    staff_list: list[dict] = item.get("staff") or []
+    if not staff_list and courses:
+        staff_list = courses[0].get("staff") or []
+    safe["staff_names"] = ", ".join(s.get("name") or "" for s in staff_list if s.get("name"))
+
+    # Location
+    loc = item.get("location")
+    if isinstance(loc, dict):
+        safe["location_name"] = loc.get("name") or ""
+        building = loc.get("building")
+        if isinstance(building, dict):
+            safe["building_name"] = building.get("name") or ""
+
+    return safe
+
+
+def _resolve_event_title(
+    item: dict,
+    export: dict,
+    placeholders: defaultdict,
+    ical_map_names: dict[int, str],
+) -> str:
+    """6-layer title resolution (highest-priority first).
+
+    1. Fix 11 – per-event inline ``ical_event_title[id]`` query param
+    2. Fix 8  – ``ical_map`` bulk-resolved module/course name
+    3.          ``ical_title_format`` user template with expanded placeholders
+    4. Fix 4  – filter-derived context (``_filter_module_name`` / ``_filter_course_name``)
+    5. Fix 9/6– joined module names → joined course names
+    6.          ``event.name`` → ``"Event #{id}"``
+    """
+    event_id: int | None = item.get("id")
+
+    # Layer 1: Fix 11
+    per_event_map: dict = export.get("ical_event_titles_map") or {}
+    if event_id is not None and event_id in per_event_map:
+        return per_event_map[event_id]
+
+    # Layer 2: Fix 8
+    if event_id is not None and event_id in ical_map_names:
+        return ical_map_names[event_id]
+
+    # Layer 3: user-provided title template
+    title_fmt: str | None = export.get("ical_title_format")
+    if title_fmt:
+        return title_fmt.format_map(placeholders)
+
+    # Layer 4: Fix 4 – filter-derived context
+    filter_module = export.get("_filter_module_name") or ""
+    filter_course = export.get("_filter_course_name") or ""
+    context_name = filter_module or filter_course
+    if context_name:
+        event_name = item.get("name") or ""
+        return f"{context_name} – {event_name}" if event_name else context_name
+
+    # Layer 5: Fix 9/6 joined names
+    module_names: str = placeholders["module_name"]
+    if module_names:
+        return module_names
+    course_names: str = placeholders["course_name"]
+    if course_names:
+        return course_names
+
+    # Layer 6: fallback
+    name: str = item.get("name") or ""
+    return name if name else f"Event #{event_id or 'unknown'}"
+
+
+def _collapse_recurring_to_rrule(items: list[dict]) -> list[list[dict]]:
+    """Group items into recurring sets for RRULE collapsing.
+
+    Returns a list of groups. Each group is a list of event dicts that share
+    the same (course_ids, weekday, start_time, end_time, location_id) signature
+    and occur at strictly weekly intervals.  Groups whose inter-event gaps are
+    not exactly 7 days are left as individual single-item groups.
+    """
+    def _sig(item: dict) -> tuple:
+        course_ids = frozenset(c.get("id") for c in (item.get("courses") or []))
+        d: date_type | None = item.get("event_date")
+        weekday = d.isoweekday() if d else None
+        return (course_ids, weekday, item.get("start_time"), item.get("end_time"), item.get("location_id"))
+
+    buckets: dict[tuple, list[dict]] = {}
+    for item in items:
+        sig = _sig(item)
+        buckets.setdefault(sig, []).append(item)
+
+    result: list[list[dict]] = []
+    for group in buckets.values():
+        if len(group) == 1:
+            result.append(group)
+            continue
+        group_sorted = sorted(group, key=lambda x: x.get("event_date") or date_type.min)
+        # Accept groups where all inter-event gaps are multiples of 7 days.
+        # Gaps exactly 7 days → no EXDATEs; larger multiples (e.g. a skipped
+        # holiday week) produce EXDATE entries in the VEVENT.
+        all_weekly_multiples = all(
+            (group_sorted[i + 1]["event_date"] - group_sorted[i]["event_date"]).days % 7 == 0
+            for i in range(len(group_sorted) - 1)
+        )
+        if all_weekly_multiples:
+            result.append(group_sorted)
+        else:
+            # Emit each occurrence individually
+            result.extend([[item] for item in group_sorted])
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Response builders – JSON / CSV / iCal
 # ---------------------------------------------------------------------------
@@ -604,53 +842,216 @@ def build_list_response(data: dict, items: list[dict], export: dict):
     return {**{k: data[k] for k in ("count", "page", "limit", "total_pages")}, "items": items}
 
 
-def build_event_list_response(data: dict, items: list[dict], export: dict):
+def build_event_list_response(session: Session, data: dict, items: list[dict], export: dict):
     """Like ``build_list_response`` but additionally supports iCal export."""
     fmt = export.get("format")
     if fmt is not None and fmt.value == "ical":
-        return _build_ical_response(items, export)
+        return _build_ical_response(session, items, export)
     return build_list_response(data, items, export)
 
 
-def _build_ical_response(items: list[dict], export: dict) -> Response:
-    """Convert event dicts into an iCalendar file response."""
-    title_fmt = export.get("ical_title_format") or "{name}"
-    loc_fmt = export.get("ical_location_format")
-    desc_fmt = export.get("ical_description_format")
-    reminder_min = export.get("ical_reminder_minutes")
+def _build_vtimezone(tz_str: str, tz: ZoneInfo) -> Timezone:
+    """Build a VTIMEZONE component for the given IANA timezone (RFC 5545 §3.6.5).
 
+    Probes the current year's DST transitions via binary search to populate
+    STANDARD and DAYLIGHT sub-components.  Timezones without DST get a single
+    STANDARD component.
+    """
+    from datetime import timezone as _utc
+
+    year = datetime.now().year
+    jan = datetime(year, 1, 15, 12, 0, tzinfo=tz)
+    jul = datetime(year, 7, 15, 12, 0, tzinfo=tz)
+    std_offset = jan.utcoffset()
+    dst_offset = jul.utcoffset()
+
+    vtz = Timezone()
+    vtz.add("TZID", tz_str)
+
+    if std_offset == dst_offset:
+        # No daylight-saving transitions
+        comp = TimezoneStandard()
+        comp.add("DTSTART", datetime(1970, 1, 1, 0, 0, 0))
+        comp.add("TZOFFSETFROM", std_offset)
+        comp.add("TZOFFSETTO", std_offset)
+        comp.add("TZNAME", jan.tzname())
+        vtz.add_component(comp)
+    else:
+        def _find_transition(start_month: int, end_month: int) -> datetime:
+            """Binary-search for the first hour-boundary DST transition."""
+            low = datetime(year, start_month, 1, tzinfo=_utc.utc)
+            high = datetime(year, end_month, 28, tzinfo=_utc.utc)
+            while (high - low).total_seconds() > 3600:
+                mid = low + (high - low) / 2
+                if mid.astimezone(tz).utcoffset() != low.astimezone(tz).utcoffset():
+                    high = mid
+                else:
+                    low = mid
+            return high.astimezone(tz).replace(tzinfo=None)
+
+        spring = _find_transition(2, 4)   # std→dst (clocks forward)
+        fall = _find_transition(9, 11)    # dst→std (clocks back)
+
+        dst_comp = TimezoneDaylight()
+        dst_comp.add("DTSTART", spring)
+        dst_comp.add("TZOFFSETFROM", std_offset)
+        dst_comp.add("TZOFFSETTO", dst_offset)
+        dst_comp.add("TZNAME", jul.tzname())
+        vtz.add_component(dst_comp)
+
+        std_comp = TimezoneStandard()
+        std_comp.add("DTSTART", fall)
+        std_comp.add("TZOFFSETFROM", dst_offset)
+        std_comp.add("TZOFFSETTO", std_offset)
+        std_comp.add("TZNAME", jan.tzname())
+        vtz.add_component(std_comp)
+
+    return vtz
+
+
+def _build_ical_response(session: Session, items: list[dict], export: dict):
+    """Convert event dicts into an iCalendar (.ics) file response.
+
+    Title resolution uses a 6-layer strategy (Fixes 4, 8, 9/6, 11, 12).
+    Supports: VCALENDAR name/timezone, per-event COLOR/TRANSP/ORGANIZER/CATEGORIES,
+    multiple VALARMs, RRULE collapsing, and custom filename.
+    """
+    # ------------------------------------------------------------------ #
+    # Apply ical_template preset (overrides individual format params)      #
+    # ------------------------------------------------------------------ #
+    template = export.get("ical_template")
+    if template is not None:
+        tval = template.value if hasattr(template, "value") else str(template)
+        if tval == "compact":
+            export = {**export, "ical_title_format": "{course_name}", "ical_description_format": None, "ical_location_format": None}
+        elif tval == "detailed":
+            export = {**export, "ical_title_format": "{module_name} – {course_name}", "ical_description_format": "{name}\n{staff_names}"}
+        elif tval == "minimal":
+            export = {**export, "ical_title_format": "{name}", "ical_description_format": None, "ical_location_format": None}
+        # "custom" leaves individual params untouched
+
+    loc_fmt: str | None = export.get("ical_location_format")
+    desc_fmt: str | None = export.get("ical_description_format")
+    reminder_mins: list[int] = export.get("ical_reminder_minutes") or []
+    separator: str = export.get("ical_multi_value_separator") or " / "
+    tz_str: str = export.get("ical_timezone") or "Europe/Berlin"
+    filename: str = export.get("ical_filename") or "events.ics"
+    ical_color: str | None = export.get("ical_color")
+    busy_status = export.get("ical_busy_status")
+    organizer: str | None = export.get("ical_organizer")
+    categories: str | None = export.get("ical_categories")
+    collapse: bool = bool(export.get("ical_collapse_recurring"))
+
+    try:
+        tz = ZoneInfo(tz_str)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("Europe/Berlin")
+
+    # ------------------------------------------------------------------ #
+    # Fix 8: pre-resolve ical_map → {event_id: name} dict                 #
+    # ------------------------------------------------------------------ #
+    ical_map_names: dict[int, str] = {}
+    raw_map: str | None = export.get("ical_map")
+    if raw_map:
+        try:
+            map_data: dict = json.loads(raw_map)
+            map_type: str = export.get("ical_map_type") or "module"
+            target_ids = set(int(v) for v in map_data.values())
+            if map_type == "course":
+                from database.model import Course as _Course
+                rows = session.exec(select(_Course).where(_Course.id.in_(target_ids))).all()  # type: ignore
+            else:
+                from database.model import Module as _Module
+                rows = session.exec(select(_Module).where(_Module.id.in_(target_ids))).all()  # type: ignore
+            id_to_name = {r.id: r.name for r in rows}
+            for eid_str, mid in map_data.items():
+                name = id_to_name.get(int(mid)) or ""
+                if name:
+                    ical_map_names[int(eid_str)] = name
+        except (json.JSONDecodeError, ValueError):
+            pass  # Malformed map; silently skip
+
+    # ------------------------------------------------------------------ #
+    # VCALENDAR                                                            #
+    # ------------------------------------------------------------------ #
     cal = Calendar()
     cal.add("prodid", "-//Almaweb Parser//EN")
     cal.add("version", "2.0")
+    if cal_name := export.get("ical_calendar_name"):
+        cal.add("x-wr-calname", cal_name)
+    cal.add("x-wr-timezone", tz_str)
+    cal.add_component(_build_vtimezone(tz_str, tz))
 
-    for item in items:
-        # defaultdict ensures missing placeholders resolve to "" instead of raising
-        safe = defaultdict(str, {k: (v if v is not None else "") for k, v in item.items()})
+    # ------------------------------------------------------------------ #
+    # Determine groups (collapse recurring or 1:1)                        #
+    # ------------------------------------------------------------------ #
+    print(f"Exporting {len(items)} events with collapse={collapse}")
+    groups: list[list[dict]] = _collapse_recurring_to_rrule(items) if collapse else [[item] for item in items]
+
+    for group in groups:
+        representative = group[0]
+        placeholders = _build_event_placeholders(representative, separator)
+        summary = _resolve_event_title(representative, export, placeholders, ical_map_names)
+        print(f"Processing event ID {representative.get('id')} with summary '{summary}' and {len(group)} occurrence(s)")
 
         ev = ICalEvent()
-        ev.add("uid", f"event-{item.get('id', 'unknown')}@almaweb-parser")
-        ev.add("summary", title_fmt.format_map(safe))
+        ev.add("uid", f"event-{representative.get('id', 'unknown')}@almaweb-parser")
+        ev.add("summary", summary)
 
-        date, t_start, t_end = item.get("event_date"), item.get("start_time"), item.get("end_time")
-        if date and t_start:
-            ev.add("dtstart", datetime.combine(date, t_start))
-        if date and t_end:
-            ev.add("dtend", datetime.combine(date, t_end))
+        # Timestamps
+        d: date_type | None = representative.get("event_date")
+        t_start = representative.get("start_time")
+        t_end = representative.get("end_time")
+        if d and t_start:
+            ev.add("dtstart", datetime.combine(d, t_start, tzinfo=tz))
+        if d and t_end:
+            ev.add("dtend", datetime.combine(d, t_end, tzinfo=tz))
 
-        # Location: custom format > raw field
+        # RRULE + EXDATE for recurring groups
+        if len(group) > 1:
+            d_first: date_type = group[0]["event_date"]
+            d_last: date_type = group[-1]["event_date"]
+            total_weeks: int = (d_last - d_first).days // 7 + 1
+            ev.add("rrule", {"FREQ": "WEEKLY", "COUNT": total_weeks})
+            # Dates that would occur in a strict weekly series from d_first
+            all_expected = {d_first + timedelta(weeks=i) for i in range(total_weeks)}
+            actual_dates = {item.get("event_date") for item in group}
+            skipped = sorted(all_expected - actual_dates)
+            if skipped and t_start:
+                ev.add("exdate", [datetime.combine(sk, t_start, tzinfo=tz) for sk in skipped])
+
+        # Location: custom format > location.name from included relation
         if loc_fmt:
-            ev.add("location", loc_fmt.format_map(safe))
-        elif item.get("location"):
-            ev.add("location", str(item["location"]))
+            loc_str = loc_fmt.format_map(placeholders)
+            if loc_str:
+                ev.add("location", loc_str)
+        elif placeholders["location_name"]:
+            ev.add("location", placeholders["location_name"])
 
+        # Description
         if desc_fmt:
-            ev.add("description", desc_fmt.format_map(safe))
+            desc_str = desc_fmt.format_map(placeholders)
+            if desc_str:
+                ev.add("description", desc_str)
 
-        # Optional pre-event reminder alarm
-        if reminder_min is not None:
+        # Optional properties
+        if ical_color:
+            ev.add("color", ical_color)
+        if busy_status is not None:
+            bs_val = busy_status.value if hasattr(busy_status, "value") else str(busy_status)
+            ev.add("transp", "TRANSPARENT" if bs_val == "FREE" else "OPAQUE")
+        if organizer:
+            ev.add("organizer", organizer)
+        if categories:
+            cats = categories.format_map(placeholders)
+            if cats:
+                ev.add("categories", cats)
+
+        # VALARM components (one per reminder minute)
+        for mins in reminder_mins:
             alarm = Alarm()
             alarm.add("action", "DISPLAY")
-            alarm.add("trigger", timedelta(minutes=-reminder_min))
+            alarm.add("trigger", timedelta(minutes=-mins))
             alarm.add("description", "Event reminder")
             ev.add_component(alarm)
 
@@ -659,5 +1060,5 @@ def _build_ical_response(items: list[dict], export: dict) -> Response:
     return Response(
         content=cal.to_ical(),
         media_type="text/calendar",
-        headers={"Content-Disposition": "attachment; filename=events.ics"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Semester, Event, Course, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, SemesterRead, EventRead, CourseRead, ModuleRead
 
 router = APIRouter(prefix="/semesters", tags=["Semesters"], responses=PROBLEM_RESPONSES)
@@ -61,10 +61,11 @@ def get_semester_events(
 ):
     """Retrieve a list of events associated with a specific semester with a many-to-many relationship."""
     query = select(Event).where(Event.courses.any(Course.modules.any(Module.start_semester.any(Semester.id == semester_id))))  # type: ignore
+    ical_including = _ical_augment_including(including, export)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, export)
     
 
 @router.get("/{semester_id}/courses", summary="List courses for a semester", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)

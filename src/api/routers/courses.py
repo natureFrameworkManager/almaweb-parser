@@ -7,7 +7,7 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Course, Event, Module, Staff
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, CourseRead, EventRead, ModuleRead, StaffRead
 
 router = APIRouter(prefix="/courses", tags=["Courses"], responses=PROBLEM_RESPONSES)
@@ -102,10 +102,13 @@ def get_course_events(
 ):
     """Retrieve a list of events associated with a specific course."""
     query = select(Event).where(Event.courses.any(Course.id == course_id))  # type: ignore
+    crs = session.get(Course, course_id)
+    ical_exports = {**exports, "_filter_course_name": crs.name if crs else None}
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, exports)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/{course_id}/modules", summary="Get modules linked to a course", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
 def get_course_modules(

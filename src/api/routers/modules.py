@@ -6,7 +6,7 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Module, Course, Event, Staff, Degree
-from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
+from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead
 
 
@@ -138,10 +138,13 @@ def get_module_events(
     Retrieve a module events.
     """
     query = select(Event).where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    mod = session.get(Module, module_id)
+    ical_exports = {**exports, "_filter_module_name": mod.name if mod else None}
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, exports)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/{module_id}/staff", summary="Staff linked to a module", response_model=PaginatedResponse[StaffRead], response_model_exclude_unset=True)
 def get_module_staff(

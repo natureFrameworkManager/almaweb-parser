@@ -9,7 +9,7 @@ from datetime import date, time, timedelta
 import re
 
 from database.model import Event, Course, Module, Staff, Location
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, EventRead, CourseRead, ModuleRead, StaffRead, LocationRead
 
 router = APIRouter(prefix="/events", tags=["Events"], responses=PROBLEM_RESPONSES)
@@ -115,10 +115,24 @@ def get_events(
     if module_number:
         query = query.where(Event.courses.any(Course.modules.any(Module.number.ilike(f"%{module_number}%")))) # type: ignore
 
+    # Fix 4: resolve filter context names for iCal title auto-detection
+    ical_exports = dict(exports)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, exports)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/today", summary="List today's events", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_todays_events(
@@ -128,14 +142,38 @@ def get_todays_events(
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
 ):
     """Retrieve a list of events occurring today."""
     today = date.today()
     query = select(Event).where(Event.event_date == today)
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if module_name:
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%"))))  # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
+    if course_name:
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    ical_exports = dict(export)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/tomorrow", summary="List tomorrow's events", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_tomorrows_events(
@@ -145,14 +183,38 @@ def get_tomorrows_events(
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
 ):
     """Retrieve a list of events occurring tomorrow."""
     tomorrow = date.today() + timedelta(days=1)
     query = select(Event).where(Event.event_date == tomorrow)
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if module_name:
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%"))))  # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
+    if course_name:
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    ical_exports = dict(export)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/week", summary="List events for the current week", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_weeks_events(
@@ -162,16 +224,40 @@ def get_weeks_events(
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
 ):
     """Retrieve a list of events occurring in the current week (Monday to Sunday)."""
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday())  # Monday
     end_of_week = start_of_week + timedelta(days=6)  # Sunday
     query = select(Event).where(Event.event_date >= start_of_week).where(Event.event_date <= end_of_week)
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if module_name:
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%"))))  # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
+    if course_name:
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    ical_exports = dict(export)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/day/{date}", summary="List events for a specific date", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events_by_date(
@@ -182,13 +268,37 @@ def get_events_by_date(
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
 ):
     """Retrieve a list of events occurring on a specific date."""
     query = select(Event).where(Event.event_date == date)
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if module_name:
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%"))))  # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
+    if course_name:
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    ical_exports = dict(export)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/week/{date}", summary="List events for a specific week", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events_by_week(
@@ -199,15 +309,39 @@ def get_events_by_week(
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
 ):
     """Retrieve a list of events occurring in the week of a specific date (Monday to Sunday)."""
     start_of_week = date - timedelta(days=date.weekday())  # Monday
     end_of_week = start_of_week + timedelta(days=6)  # Sunday
     query = select(Event).where(Event.event_date >= start_of_week).where(Event.event_date <= end_of_week)
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if module_name:
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%"))))  # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
+    if course_name:
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    ical_exports = dict(export)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/month/{date}", summary="List events for a specific month", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_events_by_month(
@@ -218,6 +352,10 @@ def get_events_by_month(
     paging: Annotated[dict, Depends(paging_parameters)],
     export: Annotated[dict, Depends(export_event_parameters)],
     date: date,
+    module_id: int | None = Query(None, description="ID of the module the event belongs to"),
+    module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
+    course_id: int | None = Query(None, description="ID of the course the event belongs to"),
+    course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
 ):
     """Retrieve a list of events occurring in the month of a specific date."""
     start_of_month = date.replace(day=1)
@@ -226,10 +364,30 @@ def get_events_by_month(
     else:
         start_of_next_month = start_of_month.replace(month=date.month + 1)
     query = select(Event).where(Event.event_date >= start_of_month).where(Event.event_date < start_of_next_month)
+    if module_id is not None:
+        query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if module_name:
+        query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%"))))  # type: ignore
+    if course_id is not None:
+        query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
+    if course_name:
+        query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    ical_exports = dict(export)
+    if module_id is not None:
+        mod = session.get(Module, module_id)
+        ical_exports["_filter_module_name"] = mod.name if mod else None
+    elif module_name:
+        ical_exports["_filter_module_name"] = module_name
+    if course_id is not None:
+        crs = session.get(Course, course_id)
+        ical_exports["_filter_course_name"] = crs.name if crs else None
+    elif course_name:
+        ical_exports["_filter_course_name"] = course_name
+    ical_including = _ical_augment_including(including, ical_exports)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
-    items = filter_query(session, query, fielding, Event, including)
-    return build_event_list_response(data, items, export)
+    items = filter_query(session, query, fielding, Event, ical_including)
+    return build_event_list_response(session, data, items, ical_exports)
 
 @router.get("/{event_id}", summary="Get an event by ID", response_model=EventRead, response_model_exclude_unset=True)
 def get_event(
