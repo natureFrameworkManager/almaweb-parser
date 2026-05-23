@@ -139,6 +139,8 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
   <code>GET /catalog/event-types/{id}</code> and <code>GET /catalog/statuses/{id}</code> don't validate existence. They should return 404 for missing IDs.
   </details>
 
+- [ ] Fix issue with parser of unsplit staff names
+
 ---
 
 ## 5. Future Ideas
