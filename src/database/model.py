@@ -97,11 +97,11 @@ class Course(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
     number: str = ""
-    type: int | None = Field(foreign_key="eventtype.id") # TODO: Remove None
+    type: int = Field(foreign_key="eventtype.id")
     weekday: int | None = None # 1=Monday, 2=Tuesday, ..., 7=Sunday. This is not always available in the source data, so it can be None.
     weekly_hours: int = 0
     language: str = ""
-    status: int | None = Field(foreign_key="status.id") # TODO: Remove None
+    status: int = Field(foreign_key="status.id")
 
     staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
     modules: list["Module"] = Relationship(back_populates="courses", link_model=ModuleCourseLink)

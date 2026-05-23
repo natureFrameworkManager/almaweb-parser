@@ -1,10 +1,10 @@
 # TODO
 ## Code & Model Issues
 
-- [ ] **Remove `None` from `Course.type` field**
+- [x] **Remove `None` from `Course.type` field**
   - In `src/database/model.py:100`, should be non-nullable once data quality is ensured
 
-- [ ] **Remove `None` from `Course.status` field**
+- [x] **Remove `None` from `Course.status` field**
   - In `src/database/model.py:104`, should be non-nullable once data quality is ensured
 
 - [ ] **Fix parser of unsplit staff names**
