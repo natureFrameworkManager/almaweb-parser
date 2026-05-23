@@ -178,15 +178,22 @@ def get_module_degrees(
     items = filter_query(session, query, fielding, Degree, including)
     return build_list_response(data, items, exports)
 
-@router.get("/distinct/{field}", summary="Distinct values for a module field")
+@router.get("/distinct/fields", summary="Distinct values for a module field")
 def get_distinct_module_field(
     session: SessionDep,
+    field_name: Annotated[dict, Depends(distinct_parameters(Module))],
     paging: Annotated[dict, Depends(paging_parameters)],
-    field: str | None, # type: ignore
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+    export: Annotated[dict, Depends(export_parameters)],
 ):
     """
     Retrieve distinct values for a module field.
     """
-    pass
+    field = field_name.get("field")
+    order = field_name.get("order")
+    query = select(getattr(Module, field)).distinct()  # type: ignore
+    if order:
+        sort_column = getattr(Module, field)  # type: ignore
+        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
+    data, query = page_query(session, query, paging)
+    items = [{field: value} for value in session.exec(query).all()]
+    return build_list_response(data, items, export)

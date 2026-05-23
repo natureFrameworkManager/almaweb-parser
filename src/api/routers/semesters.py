@@ -101,12 +101,20 @@ def get_semester_modules(
     items = filter_query(session, query, fielding, Module, including)
     return build_list_response(data, items, export)
 
-@router.get("/distinct/{field_name}", summary="Get distinct values")
+@router.get("/distinct/fields", summary="Get distinct values")
 def get_semester_distinct_field(
     session: SessionDep,
-    field_name: str,
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+    field_name: Annotated[dict, Depends(distinct_parameters(Semester))],
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all semesters."""
-    pass
+    field = field_name.get("field")
+    order = field_name.get("order")
+    query = select(getattr(Semester, field)).distinct()  # type: ignore
+    if order:
+        sort_column = getattr(Semester, field)  # type: ignore
+        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
+    data, query = page_query(session, query, paging)
+    items = [{field: value} for value in session.exec(query).all()]
+    return build_list_response(data, items, export)

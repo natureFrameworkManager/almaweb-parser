@@ -495,12 +495,19 @@ def paging_parameters(
     return {"page": page, "page_size": page_size}
 
 
-# TODO: Real implementation
 def distinct_parameters(
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+    model_class: type,
 ):
-    return {"sort": sort, "format": format}
+    DistinctField = model_field_enum(model_class, f"{model_class.__name__}DistinctField")
+    field_values = [str(f.value) for f in DistinctField.__members__.values()]
+
+    def _dep(
+        field: str = Query(..., description="Column name.", enum=field_values),
+        order: SortOrder = Query(SortOrder.asc, description="Sort direction: asc or desc."),
+    ):
+        return {"field": field, "order": order.value}
+
+    return _dep
 
 
 # ---------------------------------------------------------------------------

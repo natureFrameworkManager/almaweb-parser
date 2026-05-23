@@ -66,21 +66,20 @@ def get_faculty_degrees(
     items = filter_query(session, query, fielding, Degree, including)
     return build_list_response(data, items, export)
 
-@router.get("/distinct/{field_name}", summary="Get distinct values")
+@router.get("/distinct/fields", summary="Get distinct values")
 def get_faculty_distinct_field(
     session: SessionDep,
-    field_name: str,
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+    field_name: Annotated[dict, Depends(distinct_parameters(Faculty))],
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all faculties."""
-    valid_fields = {"name", "prefix"}
-    if field_name not in valid_fields:
-        raise ValueError(f"Invalid field name. Valid options are: {', '.join(valid_fields)}")
-    
-    query = select(getattr(Faculty, field_name)).distinct()
-    if sort:
-        sort_column = getattr(Faculty, field_name)
-        query = query.order_by(sort_column.asc() if sort.lower() == "asc" else sort_column.desc())
-    
-    return session.exec(query).all()
+    field = field_name.get("field")
+    order = field_name.get("order")
+    query = select(getattr(Faculty, field)).distinct()  # type: ignore
+    if order:
+        sort_column = getattr(Faculty, field) # type: ignore
+        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
+    data, query = page_query(session, query, paging)
+    items = [{field: value} for value in session.exec(query).all()]
+    return build_list_response(data, items, export)

@@ -141,12 +141,20 @@ def get_course_staff(
     items = filter_query(session, query, fielding, Staff, including)
     return build_list_response(data, items, exports)
 
-@router.get("/distinct/{field_name}", summary="Get distinct values for a course field")
+@router.get("/distinct/fields", summary="Get distinct values for a course field")
 def get_course_distinct_field(
     session: SessionDep,
-    field_name: str,
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Response format (e.g., 'json', 'csv')."),
+    field_name: Annotated[dict, Depends(distinct_parameters(Course))],
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all courses."""
-    pass
+    field = field_name.get("field")
+    order = field_name.get("order")
+    query = select(getattr(Course, field)).distinct()  # type: ignore
+    if order:
+        sort_column = getattr(Course, field)  # type: ignore
+        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
+    data, query = page_query(session, query, paging)
+    items = [{field: value} for value in session.exec(query).all()]
+    return build_list_response(data, items, export)

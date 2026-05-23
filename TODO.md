@@ -21,7 +21,7 @@
   In <code>src/api/routers/schedule.py:31</code>, the <code>/schedule/weekly</code> endpoint ignores all filter parameters (semester, faculty, degree, course, module, staff, location, building, weekday). It currently returns an unfiltered event list.
   </details>
 
-- [ ] **Implement `distinct_parameters` helper properly**
+- [x] **Implement `distinct_parameters` helper properly**
   <details><summary>Details</summary>
   In <code>src/api/routers/shared.py:498</code>, <code>distinct_parameters()</code> is marked TODO and only captures sort/format without any real distinct-value logic.
   </details>
@@ -32,16 +32,16 @@
 
 ### 2.1 Distinct Field Endpoints
 
-All `/distinct/{field}` endpoints are stubs (empty `pass`) except `/faculties/distinct/{field}`.
+All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/distinct/fields`.
 
-- [ ] **`GET /modules/distinct/{field}`** — stub, no logic
-- [ ] **`GET /courses/distinct/{field}`** — stub, no logic
-- [ ] **`GET /events/distinct/{field}`** — stub, no logic
-- [ ] **`GET /staff/distinct/{field}`** — stub, no logic
-- [ ] **`GET /locations/distinct/{field}`** — stub, no logic
-- [ ] **`GET /buildings/distinct/{field}`** — stub, no logic
-- [ ] **`GET /semesters/distinct/{field}`** — stub, no logic
-- [ ] **`GET /degrees/distinct/{field}`** — stub, no logic
+- [x] **`GET /modules/distinct/fields`** — stub, no logic
+- [x] **`GET /courses/distinct/fields`** — stub, no logic
+- [x] **`GET /events/distinct/fields`** — stub, no logic
+- [x] **`GET /staff/distinct/fields`** — stub, no logic
+- [x] **`GET /locations/distinct/fields`** — stub, no logic
+- [x] **`GET /buildings/distinct/fields`** — stub, no logic
+- [x] **`GET /semesters/distinct/fields`** — stub, no logic
+- [x] **`GET /degrees/distinct/fields`** — stub, no logic
 
 ### 2.3 Admin Endpoints
 

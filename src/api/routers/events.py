@@ -308,12 +308,20 @@ def get_event_location(
     items = filter_query(session, query, fielding, Location, including)
     return items[0] if items else None
 
-@router.get("/distinct/{field_name}", summary="Get distinct values for an event field")
+@router.get("/distinct/fields", summary="Get distinct values for an event field")
 def get_event_distinct_field(
     session: SessionDep,
-    field_name: str,
-    sort: str | None = Query(None, description="Sort order for the results. For example, 'asc' or 'desc'."),
-    format: str | None = Query(None, description="Format of the returned distinct values. Possible values: 'json' (default) or 'csv'."),
+    field_name: Annotated[dict, Depends(distinct_parameters(Event))],
+    paging: Annotated[dict, Depends(paging_parameters)],
+    export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve a list of distinct values for a specified event field."""
-    pass
+    field = field_name.get("field")
+    order = field_name.get("order")
+    query = select(getattr(Event, field)).distinct()  # type: ignore
+    if order:
+        sort_column = getattr(Event, field)  # type: ignore
+        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
+    data, query = page_query(session, query, paging)
+    items = [{field: value} for value in session.exec(query).all()]
+    return build_list_response(data, items, export)
