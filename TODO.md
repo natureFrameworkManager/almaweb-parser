@@ -150,10 +150,10 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
 
 ### Crawler
 
-- [ ] Support crawling multiple faculties or semesters in a single run
 - [ ] Add a periodic re-crawl mechanism that updates existing records instead of requiring a full re-run
 - [ ] Add a `last_updated` timestamp to each datapoint
 - [ ] Better error handling and logging in the crawler to identify and recover from parsing issues
+- [ ] Add recovering from partial failures (e.g. if one module fails to parse, still ingest the rest of the data) or the crawler exits halfway through, it can resume from the last successful point instead of starting over
 
 ### API — Filters
 
@@ -165,27 +165,14 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
 
 ### API — Endpoints
 
-- [ ] Add `/api/modules/{id}/ical` shortcut to export a single module's timetable directly
 - [ ] Expose a room/location schedule endpoint (all events in a given room on a given day)
 
 ### Data Model
 
-- [ ] Handle courses of multiple modules with a many-to-many relationship where necessary
 - [ ] Parse degree and semester information from the path or other sources
-- [ ] Normalize events to a single week pattern and time slot format by collapsing dates
 - [ ] Optimize event storage (57k+ entries per semester)
-
-### iCal Export
-
-- [ ] Fix event SUMMARY for events with empty names by resolving titles from linked courses/modules
-- [ ] Add `ical_title_mode` to control title assembly strategy (event / course / module / smart)
-- [ ] Expand format placeholders to include `{course_name}`, `{module_name}`, `{staff_names}`, etc.
-- [ ] Add `ical_fan_out` parameter to emit one VEVENT per course/module pair
-- [ ] Add `ical_calendar_name`, `ical_timezone`, `ical_filename`, `ical_categories` parameters
-- [ ] Add named presets via `ical_template` (compact / detailed / minimal)
 
 ### Infrastructure
 
-- [ ] Add tests
 - [ ] Containerize with Docker
 - [ ] Make endpoints compatible with the [planer app](https://github.com/natureFrameworkManager/planer)
