@@ -43,8 +43,10 @@ def get_events(
     date_from: str | None = Query(None, description="Start date for range filtering (YYYY-MM-DD, inclusive)"),
     date_to: str | None = Query(None, description="End date for range filtering (YYYY-MM-DD, inclusive)"),
     weekday: list[Annotated[int, Query(ge=0, le=6)]] | None = Query(None, description="Filter by weekday values. (0=Sunday, 1=Monday, ..., 6=Saturday)"),
-    start_time: str | None = Query(None, description="Event start time (HH:MM)"),
-    end_time: str | None = Query(None, description="Event end time (HH:MM)"),
+    start_time_from: str | None = Query(None, description="Filter events whose start time is at or after this time (HH:MM, inclusive)."),
+    start_time_to: str | None = Query(None, description="Filter events whose start time is at or before this time (HH:MM, inclusive)."),
+    end_time_from: str | None = Query(None, description="Filter events whose end time is at or after this time (HH:MM, inclusive)."),
+    end_time_to: str | None = Query(None, description="Filter events whose end time is at or before this time (HH:MM, inclusive)."),
     time_overlap: str | None = Query(None, description="Return events active at this time (HH:MM), i.e. start_time <= value <= end_time."),
     location_id: int | None = Query(None, description="ID of the location where the event takes place"),
     location: str | None = Query(None, description="Event location (case-insensitive, partial match)"),
@@ -75,12 +77,14 @@ def get_events(
     if weekday:
         sqlite_weekdays = [str((day + 1) % 7) for day in weekday]
         query = query.where(func.strftime("%w", Event.event_date).in_(sqlite_weekdays))
-    if start_time:
-        parsed_start_time = parse_hhmm_time(start_time, "start_time")
-        query = query.where(Event.start_time >= parsed_start_time)
-    if end_time:
-        parsed_end_time = parse_hhmm_time(end_time, "end_time")
-        query = query.where(Event.end_time <= parsed_end_time)
+    if start_time_from:
+        query = query.where(Event.start_time >= parse_hhmm_time(start_time_from, "start_time_from"))
+    if start_time_to:
+        query = query.where(Event.start_time <= parse_hhmm_time(start_time_to, "start_time_to"))
+    if end_time_from:
+        query = query.where(Event.end_time >= parse_hhmm_time(end_time_from, "end_time_from"))
+    if end_time_to:
+        query = query.where(Event.end_time <= parse_hhmm_time(end_time_to, "end_time_to"))
     if time_overlap:
         parsed_overlap_time = parse_hhmm_time(time_overlap, "time_overlap")
         query = query.where(Event.start_time <= parsed_overlap_time)

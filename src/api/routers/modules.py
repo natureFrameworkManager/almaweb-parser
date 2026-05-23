@@ -39,6 +39,7 @@ def get_modules(
     semester_id: list[int] | None = Query(None, description="Semester ID values (repeatable; OR within this filter)."),
     staff_id: list[int] | None = Query(None, description="Staff ID values (repeatable; OR within this filter)."),
     course_id: list[int] | None = Query(None, description="Course ID values (repeatable; OR within this filter)."),
+    responsible_person: list[str] | None = Query(None, description="Responsible person name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     has_courses: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any courses."),
     has_events: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any events in their courses."),
     has_staff: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any staff assigned to them."),
@@ -54,8 +55,10 @@ def get_modules(
         query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in name])) # type: ignore
     if number:
         query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in number])) # type: ignore
-    # if responsible_person:
-    #     query = query.where(or_(*[Module.responsible_person.ilike(f"%{value}%") for value in responsible_person])) # type: ignore
+    if responsible_person:
+        query = query.where(or_(*[Module.responsible_persons.any(Staff.name.ilike(f"%{value}%")) for value in responsible_person]))  # type: ignore
+    if staff_id:
+        query = query.where(or_(*[Module.responsible_persons.any(Staff.id == value) for value in staff_id]))  # type: ignore
     if start_semester:
         query = query.where(or_(*[Module.start_semester.ilike(f"%{value}%") for value in start_semester])) # type: ignore
     if frequency:

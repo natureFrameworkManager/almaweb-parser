@@ -81,7 +81,7 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
   In the courses router, the <code>has_events</code> boolean filter is commented out (line 49). The spec requires it.
   </details>
 
-- [ ] **Modules: `responsible_person` filter commented out**
+- [x] **Modules: `responsible_person` filter commented out**
   <details><summary>Details</summary>
   In the modules router, filtering by responsible person (staff) is commented out (line 59).
   </details>
@@ -91,7 +91,7 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
   Spec allows filtering events by building name with partial match. Not present in the events router.
   </details>
 
-- [ ] **Events: `start_time_from/to`, `end_time_from/to` range filters missing**
+- [x] **Events: `start_time_from/to`, `end_time_from/to` range filters missing**
   <details><summary>Details</summary>
   The spec defines separate time-range parameters for start/end times. The implementation has <code>start_time</code> and <code>end_time</code> exact matches instead of ranges.
   </details>
