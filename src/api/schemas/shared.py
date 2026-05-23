@@ -6,6 +6,16 @@ from pydantic import BaseModel, ConfigDict
 T = TypeVar("T")
 
 
+class Problem(BaseModel):
+    """RFC 9457 Problem Details for HTTP APIs."""
+
+    type: str = "about:blank"
+    title: str
+    status: int
+    detail: str | None = None
+    instance: str | None = None
+
+
 class ReadSchema(BaseModel):
     """Base class for all read/response schemas. Supports ORM attribute access."""
 

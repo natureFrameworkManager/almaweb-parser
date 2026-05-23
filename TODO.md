@@ -115,7 +115,7 @@ All `/distinct/fields` endpoints are stubs (empty `pass`) except `/faculties/dis
 
 ### 3.5 Response Format Differences
 
-- [ ] **RFC 9457 Problem Details not used for error responses**
+- [x] **RFC 9457 Problem Details not used for error responses**
   <details><summary>Details</summary>
   The spec requires all error responses (400, 404, 409) to use the <code>Problem</code> schema (RFC 9457). The implementation uses FastAPI default error responses.
   </details>

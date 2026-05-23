@@ -5,10 +5,10 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Course, Degree, Faculty, Module
-from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, DegreeRead, ModuleRead, FacultyRead
 
-router = APIRouter(prefix="/degrees", tags=["Degrees"])
+router = APIRouter(prefix="/degrees", tags=["Degrees"], responses=PROBLEM_RESPONSES)
 
 @router.get("", summary="List all degrees", response_model=PaginatedResponse[DegreeRead], response_model_exclude_unset=True)
 def get_degrees(

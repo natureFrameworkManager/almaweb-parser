@@ -7,10 +7,10 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Course, Event, Module, Staff
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, CourseRead, EventRead, ModuleRead, StaffRead
 
-router = APIRouter(prefix="/courses", tags=["Courses"])
+router = APIRouter(prefix="/courses", tags=["Courses"], responses=PROBLEM_RESPONSES)
 
 
 @router.get("", summary="List all Courses", response_model=PaginatedResponse[CourseRead], response_model_exclude_unset=True)

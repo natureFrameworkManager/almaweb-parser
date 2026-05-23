@@ -5,10 +5,10 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Semester, Event, Course, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, SemesterRead, EventRead, CourseRead, ModuleRead
 
-router = APIRouter(prefix="/semesters", tags=["Semesters"])
+router = APIRouter(prefix="/semesters", tags=["Semesters"], responses=PROBLEM_RESPONSES)
 
 @router.get("", summary="List all semesters", response_model=PaginatedResponse[SemesterRead], response_model_exclude_unset=True)
 def get_semesters(

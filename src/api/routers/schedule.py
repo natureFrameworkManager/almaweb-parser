@@ -4,10 +4,10 @@ from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
 
 from database.model import Event, EventStaffLink, CourseEventLink
-from .shared import SessionDep, export_event_parameters, include_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response
+from .shared import SessionDep, export_event_parameters, include_parameters, paging_parameters, sort_parameters, fields_parameters, page_query, sort_query, filter_query, build_list_response, PROBLEM_RESPONSES
 from schemas import EventRead, PaginatedResponse
 
-router = APIRouter(prefix="/schedule", tags=["Schedule"])
+router = APIRouter(prefix="/schedule", tags=["Schedule"], responses=PROBLEM_RESPONSES)
 
 @router.get("/weekly", summary="Get generic weekly schedule", response_model=PaginatedResponse[EventRead], response_model_exclude_unset=True)
 def get_weekly_schedule(

@@ -15,6 +15,16 @@ from sqlalchemy import inspect as sa_inspect
 from sqlmodel import Session, func, select
 
 from database.database import SessionDep
+from schemas import Problem
+
+# Reusable OpenAPI response definitions for RFC 9457 Problem Details.
+# Include this in every APIRouter to document error responses uniformly.
+PROBLEM_RESPONSES: dict = {
+    400: {"model": Problem, "description": "Bad Request"},
+    404: {"model": Problem, "description": "Not Found"},
+    409: {"model": Problem, "description": "Conflict"},
+    422: {"model": Problem, "description": "Unprocessable Content"},
+}
 
 
 # ---------------------------------------------------------------------------

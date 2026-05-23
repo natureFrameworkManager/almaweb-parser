@@ -5,10 +5,10 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import EventType, Status
-from .shared import SessionDep, export_parameters, get_or_404, include_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response
+from .shared import SessionDep, export_parameters, get_or_404, include_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, build_list_response, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, EventTypeRead, StatusRead
 
-router = APIRouter(prefix="/catalog", tags=["Catalog"])
+router = APIRouter(prefix="/catalog", tags=["Catalog"], responses=PROBLEM_RESPONSES)
 
 @router.get("/event-types", summary="List all event types", response_model=PaginatedResponse[EventTypeRead], response_model_exclude_unset=True)
 def get_event_types(

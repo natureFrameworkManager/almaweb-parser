@@ -1,4 +1,4 @@
-from .shared import PaginatedResponse, ReadSchema
+from .shared import PaginatedResponse, Problem, ReadSchema
 from .models import (
     EventTypeRead,
     StatusRead,

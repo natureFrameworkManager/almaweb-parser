@@ -9,10 +9,10 @@ from datetime import date, time, timedelta
 import re
 
 from database.model import Event, Course, Module, Staff, Location
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, EventRead, CourseRead, ModuleRead, StaffRead, LocationRead
 
-router = APIRouter(prefix="/events", tags=["Events"])
+router = APIRouter(prefix="/events", tags=["Events"], responses=PROBLEM_RESPONSES)
 
 def parse_iso_date(value: str, param_name: str) -> date:
     try:

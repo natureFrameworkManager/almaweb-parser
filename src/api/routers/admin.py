@@ -1,11 +1,11 @@
 from fastapi import APIRouter
 from sqlmodel import select, func
 
-from .shared import SessionDep
+from .shared import SessionDep, PROBLEM_RESPONSES
 from schemas import StatsResponse
 from database.model import Building, Course, Degree, Event, EventType, Faculty, Location, Module, Semester, Staff, Status, CourseEventLink, CourseStaffLink, EventStaffLink, ModuleCourseLink, ModuleDegreeLink, ModuleSemesterLink, ModuleStaffLink
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/admin", tags=["Admin"], responses=PROBLEM_RESPONSES)
 
 @router.get("/health", summary="Check system health")
 def get_health():

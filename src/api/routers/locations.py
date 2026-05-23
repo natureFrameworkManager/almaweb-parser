@@ -5,10 +5,10 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Location, Building, Event, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, LocationRead, BuildingRead, EventRead
 
-location_router = APIRouter(prefix="/locations", tags=["Locations"])
+location_router = APIRouter(prefix="/locations", tags=["Locations"], responses=PROBLEM_RESPONSES)
 
 @location_router.get("", summary="List all locations", response_model=PaginatedResponse[LocationRead], response_model_exclude_unset=True)
 def get_locations(
@@ -128,7 +128,7 @@ def get_location_distinct_field(
     return build_list_response(data, items, export)
 
 
-room_router = APIRouter(prefix="/buildings", tags=["Buildings"])
+room_router = APIRouter(prefix="/buildings", tags=["Buildings"], responses=PROBLEM_RESPONSES)
 
 @room_router.get("", summary="List all buildings", response_model=PaginatedResponse[BuildingRead], response_model_exclude_unset=True)
 def get_buildings(
