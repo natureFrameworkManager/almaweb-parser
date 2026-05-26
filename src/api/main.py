@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from fastapi import APIRouter, FastAPI, Request
@@ -43,6 +44,8 @@ async def lifespan(app: FastAPI):
     create_db_and_tables()
     yield
 
+# --- Read proxy path from environment (Defaults to /almaweb/v1 for production) ---
+PROXY_ROOT_PATH = os.getenv("PROXY_ROOT_PATH", "/almaweb/v1")
 
 app = FastAPI(
     lifespan=lifespan,
@@ -50,6 +53,7 @@ app = FastAPI(
     summary="Parsed data from AlmaWeb in a structured format",
     description="API for accessing parsed data from AlmaWeb, which includes modules, courses, and events. Faster and more convenient than navigating the large website tree directly, with additional filtering and querying capabilities.",
     version="1.0.0",
+    root_path=PROXY_ROOT_PATH
 )
 
 
@@ -74,7 +78,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-api_router = APIRouter(prefix="/api")
+api_router = APIRouter(prefix="")
 api_router.include_router(modules.router)
 api_router.include_router(courses.router)
 api_router.include_router(events.router)
