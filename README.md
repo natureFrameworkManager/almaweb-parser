@@ -44,6 +44,10 @@ Event endpoints support `?format=ical` with customizable SUMMARY, DESCRIPTION, a
 
 See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal title resolution and additional export parameters.
 
+#### Tools to view iCal files
+- [ICS Viewer](https://icsviewer.com/) - A simple online tool to view .ics files without needing a calendar application.
+- [Giga Tools iCal Viewer](https://giga.tools/data-tools/ical-ics-viewer) - Another online viewer with a clean interface.
+
 ## Configuration
 
 **Faculty filter** - The crawler starts from the AlmaWeb external pages entry point and navigates the full semester tree, but currently only follows links under *10 - Fakultät für Mathematik und Informatik*. To target a different faculty, change the hard-coded prefix filter in `src/parser/crawler.py`.
