@@ -443,28 +443,35 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
 
 def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, bool]:
     """
-    Insert a course event if no identical record (same course, number, date, time slot, location, and staff) already exists.
+    Insert a course event if no identical record (same date, time slot, and location) already exists.
+    If a matching event is found, any staff from event_data not yet linked to it are added.
 
-    Returns True if a new event was inserted, False if it was skipped as a duplicate.
+    Returns True if a new event was inserted, False if an existing one was reused.
     """
 
-    # Check if an event of this course with the same number, date, time, location, and staff already exists
+    # Resolve the location first so it can be used in the dedup query
+    location_id = None
+    if event_data["location"] is not None:
+        location_id = _get_or_insert_location(session, event_data["location"])
+
+    # Two events are the same physical session when they share the same room, date, and time slot.
+    # The per-course sequential number is intentionally excluded: it is not a global identifier.
     event = session.exec(
         select(Event)
-        .where(Event.number == event_data["number"])
         .where(Event.event_date == event_data["event_date"])
         .where(Event.start_time == event_data["start_time"])
         .where(Event.end_time == event_data["end_time"])
+        .where(Event.location_id == location_id)
     ).first()
 
     if event is not None:
         if event.id is None:
             raise RuntimeError("Event to add to database has no id")
+        # Merge staff: add any staff from this event_data not yet linked to the existing event
+        for staff_name in event_data.get("staff", []):
+            staff_id = _get_or_insert_staff(session, staff_name)
+            _link_event_staff(session, event.id, staff_id)
         return event.id, False
-    
-    location_id = None
-    if event_data["location"] is not None:
-        location_id = _get_or_insert_location(session, event_data["location"])
 
     # Unpacking of event_data into CourseEvent constructor, adding course_id for the foreign key relationship
     event = Event(
