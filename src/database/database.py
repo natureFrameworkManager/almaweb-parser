@@ -389,11 +389,13 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
     session.flush()
     if module.id is None:
         raise RuntimeError("Could not get module id after add and flush to database")
-    # Link module responsible person to the module, inserting them if they do not already exist
-    responsible_person_name = module_data.get("responsible_person", "")
-    if responsible_person_name:
-        staff_id = _get_or_insert_staff(session, responsible_person_name)
-        _link_module_responsible_person(session, module.id, staff_id)
+    # Link module responsible persons to the module, inserting them if they do not already exist.
+    # The raw field may contain multiple names separated by ";" or ",".
+    for responsible_person_name in re.split(r"[;,]", module_data.get("responsible_person", "")):
+        responsible_person_name = responsible_person_name.strip()
+        if responsible_person_name:
+            staff_id = _get_or_insert_staff(session, responsible_person_name)
+            _link_module_responsible_person(session, module.id, staff_id)
     return module.id, True
 
 
