@@ -7,9 +7,9 @@
 - [x] **Remove `None` from `Course.status` field**
   - In `src/database/model.py:104`, should be non-nullable once data quality is ensured
 
-- [ ] **Fix parser of unsplit staff names**
+- [x] **Fix parser of unsplit staff names**
 
-- [ ] **Fix data model and parser creating events of different modules, staff and courses**
+- [x] **Fix data model and parser creating events of different modules, staff and courses**
   - Many-to-many relationships/links not handled properly
 
 ## Unimplemented API Endpoints
