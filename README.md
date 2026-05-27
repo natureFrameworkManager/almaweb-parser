@@ -63,17 +63,17 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 
 ### API — Filters
 - [ ] Modules: filter by specific `path` segments or exact path prefixes instead of only free-text search
-- [ ] Courses: filter by exact staff members within the parsed `staff` list
+- [x] Courses: filter by exact staff members within the parsed `staff` list
 - [ ] Events: filter by exact staff members within the parsed event `staff` list
-- [ ] Events: add normalized location filters to distinguish building, room, and free-text notes
+- [x] Events: add normalized location filters to distinguish building, room, and free-text notes
 
 ### API — Endpoints
-- [ ] Expose a room/location schedule endpoint (all events in a given room on a given day)
+- [x] Expose a room/location schedule endpoint (all events in a given room on a given day)
 
 ### Data Model
 - [ ] Parse degree and semester information from the path or other sources
 - [ ] Optimize event storage (57k+ entries per semester)
 
 ### Infrastructure
-- [ ] Containerize with Docker
+- [x] Containerize with Docker
 - [ ] Make endpoints compatible with the [planer app](https://github.com/natureFrameworkManager/planer)
