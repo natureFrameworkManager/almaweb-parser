@@ -412,7 +412,6 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
         .where(Course.name == course_data["name"])
         .where(Course.number == course_data["number"])
         .where(Course.type == _get_or_insert_event_type(session, course_data["type"]))
-        .where(Course.language == course_data.get("language", ""))
     ).first()
 
     if course is not None:
@@ -481,7 +480,7 @@ def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, 
         name=event_data.get("name", ""),
         start_time=event_data["start_time"],
         end_time=event_data["end_time"],
-        event_date=event_data.get("event_date", None),
+        event_date=event_data["event_date"],
         location_id=location_id
     )  # type: ignore
     session.add(event)
