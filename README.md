@@ -59,6 +59,7 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 ## ToDo
 - [ ] Handle modules with multiple paths [src/parser/module_parser.py](src/parser/module_parser.py)
 - [ ] Handle rooms with only a name and the resulting empty building [src/parser/course_parser.py](src/parser/course_parser.py)
+- [ ] Handle event times from 00:00 to 24:00 currently error if hour outside of 0-23 range [src/parser/course_parser.py](src/parser/course_parser.py)
 
 ## Future Ideas
 
