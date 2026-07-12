@@ -77,7 +77,7 @@ class LectureSpider(scrapy.Spider):
         if len(navigationNodes) == 0 and len(moduleNodes) == 0 and len(breadcrumbs) == 0:
             semesterNodes = response.css('.linkItemContainer .linkItem[title=Vorlesungsverzeichnis] a.depth_2')
             # Only follow the first semester node if it exists, as we only want to parse one semester at a time
-            semesterNodes = [semesterNodes[0]] if semesterNodes else []
+            # semesterNodes = [semesterNodes[0]] if semesterNodes else []
             for anchor in semesterNodes:
                 text = anchor.css("::text").get()
                 if not text:
@@ -164,9 +164,10 @@ class LectureSpider(scrapy.Spider):
                 for faculty in self.found_faculties:
                     get_or_insert_faculty(session, faculty["name"], faculty["prefix"])
                 session.commit()
+            module_list = self.found_modules
             # Only parse modules that are in the valid_modules list, if it is defined. Otherwise, parse all found modules.
             # valid_modules = ["Algorithmen und Datenstrukturen 1", "Rechnernetze"]
-            # module_list = [module for module in self.found_modules if any(valid_module in module.name for valid_module in valid_modules)]
+            # module_list = [module for module in module_list if any(valid_module in module.name for valid_module in valid_modules)]
             # module_list = sorted(module_list, key=lambda m: m.name)
             # print(f"Found {len(module_list)} valid modules. Starting parsing...")
             # if len(module_list) == 0:
