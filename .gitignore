@@ -1,6 +1,8 @@
 .env
 *.db
+*.db-journal
 *.log
+parsed_modules.json
 
 # Python
 __pycache__/
