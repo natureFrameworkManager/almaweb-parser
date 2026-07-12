@@ -77,7 +77,7 @@ class LectureSpider(scrapy.Spider):
         if len(navigationNodes) == 0 and len(moduleNodes) == 0 and len(breadcrumbs) == 0:
             semesterNodes = response.css('.linkItemContainer .linkItem[title=Vorlesungsverzeichnis] a.depth_2')
             # Only follow the first semester node if it exists, as we only want to parse one semester at a time
-            # semesterNodes = [semesterNodes[0]] if semesterNodes else []
+            semesterNodes = [semesterNodes[0]] if semesterNodes else []
             for anchor in semesterNodes:
                 text = anchor.css("::text").get()
                 if not text:
