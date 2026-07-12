@@ -21,6 +21,10 @@ The crawler walks the full module tree, parses each module and its courses (incl
    ```bash
    scrapy crawl lecture_spider
    ```
+   ```bash
+   # Optional: run with progress bar
+   scrapy crawl lecture_spider -a progress_bar=1
+   ```
    This takes roughly 10 minutes. The crawler walks every page of the module tree, fetches up to 4 module pages and 8 course pages concurrently, and writes results to `database.db` as it goes. Progress is saved incrementally - interrupt with `Ctrl+C` and the modules parsed so far are kept.
 5. Start the API server:
    ```bash
