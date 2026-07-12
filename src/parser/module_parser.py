@@ -128,6 +128,9 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         for a in soup.find_all("a", attrs={"name": "eventLink"})
         if "COURSEDETAILS" in a["href"]
     ]
+    # remove duplicates while preserving order
+    seen = set()
+    course_urls = [x for x in course_urls if not (x in seen or seen.add(x))]
     courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client)
 
     module: ModuleType = {

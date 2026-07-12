@@ -131,9 +131,32 @@ class LectureSpider(scrapy.Spider):
                 for faculty in self.found_faculties:
                     get_or_insert_faculty(session, faculty["name"], faculty["prefix"])
                 session.commit()
-            handleModuleList(self.found_modules, cancel_event=cancel_event)
+            module_list = self.module_set(self.found_modules)
+
+            handleModuleList([ModuleLink(name=module.name, url=module.url, path=module.path[-1]) for module in module_list], cancel_event=cancel_event)
         finally:
             signal.signal(signal.SIGINT, previous_sigint_handler)
+        
+    def module_set(self, modules: list[ModuleLink]) -> list[ModuleLink]:
+        """
+        Create a set of unique modules based on their name and url, removing duplicates.
+        Preserve the paths by combining them into a list of unique paths for each module.
+        TODO consider implications for API data schema, as the paths are currently only arrays of strings, indicating a navigation path from index 0. So combining rather loses data or changes the structure of the data.
+        """
+        module_dict = {}
+        for module in modules:
+            key = (module.name, module.url)
+            if key not in module_dict:
+                module_dict[key] = {
+                    "name": module.name,
+                    "url": module.url,
+                    "path": [module.path]
+                }
+            else:
+                # Only add the path if it's not already present
+                if module.path not in module_dict[key]["path"]:
+                    module_dict[key]["path"].append(module.path)
+        return [ModuleLink(name=module["name"], url=module["url"], path=module["path"]) for module in module_dict.values()]
 
     def tree_to_dict(self, node):
         return {
