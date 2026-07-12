@@ -36,7 +36,7 @@ _LABEL_MAP: dict[str, str] = {
 }
 
 
-def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None):
+def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None, progress_tracker=None):
     if not moduleList:
         return []
 
@@ -53,7 +53,7 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
     with httpx.Client(limits=limits, timeout=15.0) as client:
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
             futures = [
-                executor.submit(_fetch_and_parse_module, idx, module, client, cancel_event)
+                executor.submit(_fetch_and_parse_module, idx, module, client, cancel_event, progress_tracker)
                 for idx, module in enumerate(moduleList)
             ]
             pending = set(futures)
@@ -78,6 +78,10 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                         except Exception as e:
                             print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
                             raise
+
+                # Render progress after each batch of completed modules
+                if progress_tracker is not None:
+                    progress_tracker.render_parsing()
 
             if _cancelled(cancel_event):
                 for future in pending:
@@ -158,7 +162,7 @@ def print_modules(modules: list[ModuleType]):
         for module in modules
     ]
 
-def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, ModuleType | None]:
+def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, ModuleType | None]:
     try:
         if _cancelled(cancel_event):
             return index, None
@@ -171,7 +175,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Clie
         if response.status_code == 200:
             if _cancelled(cancel_event):
                 return index, None
-            return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event)
+            return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
 
         print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}")
     except Exception as e:
@@ -180,7 +184,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Clie
     return index, None
 
 
-def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None) -> ModuleType | None:
+def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None, progress_tracker=None) -> ModuleType | None:
     if _cancelled(cancel_event):
         return None
 
@@ -190,6 +194,10 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         print("Failed to find module header.")
         return None
     number, name = header.get_text(strip=True).split(None, 1)
+
+    if progress_tracker is not None:
+        progress_tracker.set_current_module(f"{number} - {name}")
+
     values = extract_module_values(soup.select_one("#contentlayoutleft"))
     course_urls = [
         str(a["href"])
@@ -199,7 +207,7 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
     # remove duplicates while preserving order
     seen = set()
     course_urls = [x for x in course_urls if not (x in seen or seen.add(x))]
-    courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client)
+    courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client, progress_tracker=progress_tracker)
 
     module: ModuleType = {
         "name": name,
@@ -217,6 +225,12 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         "courses": courses,
     }
     room_count = len(set(room for course in module['courses'] if course is not None for event in course['events'] if event is not None for room in ([event.get('room')] if event.get('room') else [])))
+
+    # Update progress tracker
+    if progress_tracker is not None:
+        progress_tracker.increment("modules")
+        progress_tracker.set_current_module("")
+
     print(f"Parsed module {module['number']} - {module['name']}. Includes {len(module['courses'])} courses and {sum(len(course['events']) for course in module['courses'] if course is not None)} events with {room_count} rooms.")
     return module
 

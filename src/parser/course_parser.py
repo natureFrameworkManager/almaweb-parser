@@ -33,7 +33,7 @@ _COURSE_LABEL_MAP: dict[str, tuple[str, str]] = {
     "Unterrichtssprache":    ("language",     "span"),
 }
 
-def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None) -> list[CourseType | None]:
+def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None, progress_tracker=None) -> list[CourseType | None]:
     if not urls:
         return []
 
@@ -51,7 +51,7 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None, client:
     try:
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_COURSE_REQUESTS) as executor:
             futures = [
-                executor.submit(_fetch_and_parse_course, idx, url, client, cancel_event)
+                executor.submit(_fetch_and_parse_course, idx, url, client, cancel_event, progress_tracker)
                 for idx, url in enumerate(urls)
             ]
             pending = set(futures)
@@ -79,7 +79,7 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None, client:
     return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
 
 
-def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, bool, CourseType | None]:
+def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, bool, CourseType | None]:
     try:
         if _cancelled(cancel_event):
             return index, False, None
@@ -90,7 +90,7 @@ def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_e
         if response.status_code == 200:
             if _cancelled(cancel_event):
                 return index, False, None
-            return index, True, parseCourse(response.text)
+            return index, True, parseCourse(response.text, progress_tracker=progress_tracker)
 
         print(f"Failed to fetch details with status code {response.status_code} from URL: {url}")
     except Exception as e:
@@ -98,7 +98,7 @@ def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_e
 
     return index, False, None
 
-def parseCourse(html_content: str) -> CourseType | None:
+def parseCourse(html_content: str, progress_tracker=None) -> CourseType | None:
     soup = BeautifulSoup(html_content, 'html.parser')
     header = soup.find("h1")
     if not header:
@@ -106,8 +106,12 @@ def parseCourse(html_content: str) -> CourseType | None:
         return None
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
-    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name)
+    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, progress_tracker=progress_tracker)
     staff = [s.strip() for s in re.split(r"[,;]", values["staff"]) if s.strip()]
+
+    if progress_tracker is not None:
+        progress_tracker.increment("courses")
+
     return {
         "name": name,
         "number": number,
@@ -154,7 +158,7 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
 
     return values
 
-def extract_events(content: Tag | None, course_name: str) -> list[EventType]:
+def extract_events(content: Tag | None, course_name: str, progress_tracker=None) -> list[EventType]:
     if content is None:
         print(f"No events content found for course: {course_name}")
         return []
@@ -177,10 +181,14 @@ def extract_events(content: Tag | None, course_name: str) -> list[EventType]:
         room_url = cells[4].find("a", attrs={"name": "appointmentRooms"})
         room = None
         if room_url:
-            room = fetch_and_parse_room_details(room_url["href"], room_text, httpx.Client(), None)[2]  # type: ignore
+            room = fetch_and_parse_room_details(room_url["href"], room_text, httpx.Client(), None, progress_tracker=progress_tracker)[2]  # type: ignore
         else:
             room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="")) if room_text else None
         staff = [s.strip() for s in re.split(r"[,;]", staff_raw) if s.strip()]
+
+        if progress_tracker is not None:
+            progress_tracker.increment("events")
+
         events.append({
             "number": number,
             "event_date": _parse_date(date_raw),

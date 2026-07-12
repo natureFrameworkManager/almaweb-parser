@@ -33,7 +33,7 @@ _BUILDING_LABEL_MAP: dict[str, str] = {
 
 cached_rooms: dict[str, RoomType | None] = {}
 
-def fetch_and_parse_room_details(url: str, room_text: str, client: httpx.Client, cancel_event: Event) -> tuple[int, bool, RoomType | None]:
+def fetch_and_parse_room_details(url: str, room_text: str, client: httpx.Client, cancel_event: Event, progress_tracker=None) -> tuple[int, bool, RoomType | None]:
     if _cancelled(cancel_event):
         return (0, True, None)
 
@@ -47,6 +47,10 @@ def fetch_and_parse_room_details(url: str, room_text: str, client: httpx.Client,
         response.raise_for_status()
         room = parseRoom(response.text)
         cached_rooms[room_text] = room
+
+        if progress_tracker is not None:
+            progress_tracker.increment("rooms")
+
         return (0, False, room)
     except Exception as e:
         print(f"Error fetching/parsing room details from {url}: {e}")

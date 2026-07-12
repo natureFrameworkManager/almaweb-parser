@@ -9,6 +9,8 @@ from scrapy.http import Response
 from sqlmodel import Session
 from src.database.database import create_db_and_tables, get_or_insert_faculty, engine
 
+from .progress import ProgressTracker
+
 class TreeNode:
     def __init__(self, name, parent=None):
         self.name = name
@@ -49,6 +51,17 @@ class LectureSpider(scrapy.Spider):
     def __init__(self, name: str | None = None, **kwargs: Any):
         super().__init__(name, **kwargs)
         create_db_and_tables()
+        # Enable progress output via: scrapy crawl lecture_spider -a progress=1
+        self.progress_tracker = ProgressTracker(enabled=bool(getattr(self, "progress", False)))
+        if self.progress_tracker.enabled:
+            self.progress_tracker.add_phase("semesters", 0)
+            self.progress_tracker.add_phase("faculties", 0)
+            self.progress_tracker.add_phase("nodes", 0)
+            self.progress_tracker.add_phase("modules_found", 0)
+            self.progress_tracker.add_phase("modules", 0)
+            self.progress_tracker.add_phase("courses", 0)
+            self.progress_tracker.add_phase("events", 0)
+            self.progress_tracker.add_phase("rooms", 0)
 
     def parse(self, response: Response, parent_node: TreeNode|None = None):
         if parent_node is None:
@@ -57,6 +70,9 @@ class LectureSpider(scrapy.Spider):
         navigationNodes = response.css('a.auditRegNodeLink')
         moduleNodes = [x for x in response.css("a[name='eventLink']") if "MODULEDETAILS" in x.attrib.get("href", "")]
         breadcrumbs = [x.strip().replace("\xa0>", "") for x in response.css('#breadcrumb-ul a::text').getall() if x.strip()]
+
+        self.progress_tracker.update_total("nodes", len(navigationNodes))
+        self.progress_tracker.update_total("modules_found", len(moduleNodes))
 
         if len(navigationNodes) == 0 and len(moduleNodes) == 0 and len(breadcrumbs) == 0:
             semesterNodes = response.css('.linkItemContainer .linkItem[title=Vorlesungsverzeichnis] a.depth_2')
@@ -72,10 +88,13 @@ class LectureSpider(scrapy.Spider):
                 url = anchor.attrib.get("href")
                 if not url:
                     continue
+                self.progress_tracker.update_total("semesters", 1)
                 child_node = TreeNode(name, parent=parent_node)
                 parent_node.add_child(child_node)
                 self.logger.info(f"Follow semester: {name}")
                 yield response.follow(url, callback=self.parse, cb_kwargs={"parent_node": child_node})
+                self.progress_tracker.increment("semesters")
+                self.progress_tracker.render_crawling()
 
         for anchor in navigationNodes:
             text = anchor.css("::text").get()
@@ -88,6 +107,8 @@ class LectureSpider(scrapy.Spider):
                     "prefix": int(match.group(1)),
                     "name": name
                 })
+                self.progress_tracker.update_total("faculties", 1)
+                self.progress_tracker.render_crawling()
         for anchor in navigationNodes:
             text = anchor.css("::text").get()
             if not text:
@@ -103,7 +124,14 @@ class LectureSpider(scrapy.Spider):
             parent_node.add_child(child_node)
 
             self.logger.info(f"Follow navigation node: {name}")
+            self.progress_tracker.increment("nodes")
+            self.progress_tracker.render_crawling()
             yield response.follow(url, callback=self.parse, cb_kwargs={"parent_node": child_node})
+            # Test if followed URL is a faculty page by checking if it contains a faculty prefix in the breadcrumbs
+            if re.match(r"^\d{2} - ", name):
+                self.progress_tracker.increment("faculties")
+            self.progress_tracker.increment("nodes")
+            self.progress_tracker.render_crawling()
         for anchor in moduleNodes:
             text = anchor.css("::text").get()
             if not text:
@@ -116,9 +144,10 @@ class LectureSpider(scrapy.Spider):
                 url = response.urljoin(url)
             module_link = ModuleLink(name, url, parent_node.getPath())
             self.found_modules.append(module_link)
+            self.progress_tracker.increment("modules_found")
+            self.progress_tracker.render_crawling()
     
     def closed(self, reason):
-        print("Crawling finished.")
         if reason in {"shutdown", "cancelled"}:
             print("Parsing cancelled. Skipping module parsing.")
             return
@@ -143,9 +172,29 @@ class LectureSpider(scrapy.Spider):
             # if len(module_list) == 0:
             #     return
             
-            module_list = self.module_set(self.found_modules)
+            module_list = self.module_set(module_list)
+            module_list.sort(key=lambda m: m.name)
 
-            handleModuleList([ModuleLink(name=module.name, url=module.url, path=module.path[-1]) for module in module_list], cancel_event=cancel_event)
+            # Update progress tracker with final crawling counts and parsing totals
+            if self.progress_tracker.enabled:
+                self.progress_tracker.set_total("semesters", self.progress_tracker.phases["semesters"].completed)
+                self.progress_tracker.set_total("faculties", self.progress_tracker.phases["faculties"].completed)
+                self.progress_tracker.set_total("nodes", self.progress_tracker.phases["nodes"].completed)
+                self.progress_tracker.set_total("modules_found", self.progress_tracker.phases["modules_found"].completed)
+                self.progress_tracker.set_total("modules", len(module_list))
+                self.progress_tracker.render_crawling()
+                self.progress_tracker.start_parsing()
+
+            print(f"Found {len(module_list)} unique modules. Starting parsing...")
+
+            handleModuleList(
+                [ModuleLink(name=module.name, url=module.url, path=module.path[-1]) for module in module_list],
+                cancel_event=cancel_event,
+                progress_tracker=self.progress_tracker if self.progress_tracker.enabled else None,
+            )
+
+            if self.progress_tracker.enabled:
+                self.progress_tracker.finish()
         finally:
             signal.signal(signal.SIGINT, previous_sigint_handler)
         
