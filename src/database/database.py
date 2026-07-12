@@ -148,7 +148,7 @@ def _get_or_insert_building(session: Session, building_data: BuildingType) -> in
 
 def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
     """
-    Look up a location (room) by its external ID. If it does not exist, insert it.
+    Look up a location (room) by its external ID, name, and building ID. If it does not exist, insert it.
 
     Returns the location ID.
     """
@@ -157,14 +157,19 @@ def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
         from .model import Location
     except ModuleNotFoundError:
         from src.database.model import Location
+    
+    building_id = _get_or_insert_building(session, room_data["building"])
 
-    location = session.exec(select(Location).where(Location.external_id == room_data["external_id"])).first()
+    location = session.exec(
+        select(Location)
+        .where(Location.name == room_data["name"])
+        .where(Location.external_id == room_data["external_id"])
+        .where(Location.building_id == building_id)
+    ).first()
     if location is not None:
         if location.id is None:
             raise RuntimeError("Location to add to database has no id")
         return location.id
-    
-    building_id = _get_or_insert_building(session, room_data["building"])
 
     location = Location(
         name=room_data["name"],
