@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, TypedDict
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from src.parser.types import CourseType, EventType, RoomType
+
 try:
     from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
     from .utils import _WHITESPACE_RE, _cancelled
@@ -87,8 +89,74 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
     if _cancelled(cancel_event):
         print(f"Saved {len(modules)} parsed modules before interruption.")
 
+    # Print the parsed modules in a structured format to a file for easier inspection and debugging
+    # with open("parsed_modules.json", "w", encoding="utf-8") as f:
+    #     import json
+    #     json.dump(print_modules(modules), f, ensure_ascii=False, indent=4)
     return modules
 
+def print_modules(modules: list[ModuleType]):
+    def print_room(room: RoomType | None):
+        if room is None:
+            return None
+        return {
+            "name": room["name"],
+            "external_id": room["external_id"],
+            "description": room["description"],
+            "type": room["type"],
+            "seats": room["seats"],
+            "size": room["size"],
+            "accessibility": room["accessibility"],
+            "building": {
+                "name": room["building"]["name"],
+                "short_name": room["building"]["short_name"],
+                "address": room["building"]["address"],
+            },
+        }
+    def print_events(events: list[EventType]):
+        return [
+            {
+                "number": event["number"],
+                "event_date": event["event_date"].isoformat(),
+                "start_time": event["start_time"].isoformat(),
+                "end_time": event["end_time"].isoformat(),
+                "location": print_room(event["location"]),
+                "staff": event["staff"],
+            }
+            for event in events
+        ]
+    def print_courses(courses: list[CourseType | None]):
+        return [
+            {
+                "name": course["name"],
+                "number": course["number"],
+                "staff": course["staff"],
+                "type": course["type"],
+                "weekly_hours": course["weekly_hours"],
+                "language": course["language"],
+                "events": print_events(course["events"]),
+                "status": course["status"],
+            }
+            for course in courses if course is not None
+        ]
+    return [
+        {
+            "name": module["name"],
+            "number": module["number"],
+            "path": module["path"],
+            "responsible_person": module["responsible_person"],
+            "duration_semesters": module["duration_semesters"],
+            "credits": module["credits"],
+            "start_semester": module["start_semester"],
+            "frequency": module["frequency"],
+            "goals": module["goals"],
+            "content": module["content"],
+            "exam_prerequisites": module["exam_prerequisites"],
+            "prerequisites": module["prerequisites"],
+            "courses": print_courses(module["courses"]),
+        }
+        for module in modules
+    ]
 
 def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None) -> tuple[int, ModuleType | None]:
     try:
