@@ -56,6 +56,10 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 
 **Scrapy settings** - Throttling, caching, and other Scrapy options are in `src/settings.py`. AutoThrottle is enabled by default to avoid overloading the server.
 
+## ToDo
+- [ ] Handle modules with multiple paths [src/parser/module_parser.py](src/parser/module_parser.py)
+- [ ] Handle rooms with only a name and the resulting empty building [src/parser/course_parser.py](src/parser/course_parser.py)
+
 ## Future Ideas
 
 ### Crawler
