@@ -61,6 +61,7 @@ class LectureSpider(scrapy.Spider):
             self.progress_tracker.add_phase("modules", 0)
             self.progress_tracker.add_phase("courses", 0)
             self.progress_tracker.add_phase("events", 0)
+            self.progress_tracker.add_phase("exams", 0)
             self.progress_tracker.add_phase("rooms", 0)
 
     def parse(self, response: Response, parent_node: TreeNode|None = None):

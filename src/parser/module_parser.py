@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING, TypedDict
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from src.parser.types import CourseType, EventType, RoomType
+from src.parser.types import CourseType, EventType, ExamType, RoomType
 
 try:
-    from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
+    from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time
     from .utils import _WHITESPACE_RE, _cancelled
     from .types import ModuleType
 except ModuleNotFoundError:
-    from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS
+    from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time
     from src.parser.utils import _WHITESPACE_RE, _cancelled
     from src.parser.types import ModuleType
 
@@ -33,6 +33,13 @@ _LABEL_MAP: dict[str, str] = {
     "Inhalt":                  "content",
     "Prüfungsvorleistungen":   "exam_prerequisites",
     "Teilnahmevoraussetzungen": "prerequisites",
+}
+
+_EXAM_LABEL_MAP: dict[str, str] = {
+    "Prüfung":          "name",
+    "Datum":            "datetime",
+    "Lehrende":         "staff",
+    "Bestehenspflicht": "required",
 }
 
 
@@ -208,6 +215,7 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
     seen = set()
     course_urls = [x for x in course_urls if not (x in seen or seen.add(x))]
     courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client, progress_tracker=progress_tracker)
+    exams = extract_exams(find_exam_section(soup.select_one("#contentlayoutleft")), name, progress_tracker=progress_tracker)
 
     module: ModuleType = {
         "name": name,
@@ -223,6 +231,7 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         "exam_prerequisites": values["exam_prerequisites"],
         "prerequisites": parse_prerequisites(values["prerequisites"]),
         "courses": courses,
+        "exams": exams,
     }
     room_count = len(set(room for course in module['courses'] if course is not None for event in course['events'] if event is not None for room in ([event.get('room')] if event.get('room') else [])))
 
@@ -293,3 +302,67 @@ def parse_prerequisites(value: str) -> dict[str, str]:
             prerequisites["allgemein"] = part
 
     return prerequisites
+
+def find_exam_section(right_content: Tag | None) -> Tag | None:
+    if right_content is None or not isinstance(right_content.parent, Tag):
+        return None
+
+    for section in right_content.parent.find_all("div", recursive=False):
+        if not isinstance(section, Tag):
+            continue
+        for child in section.children:
+            if isinstance(child, Tag) and "Modulabschlussprüfungen" in child.get_text(" ", strip=True):
+                return child
+
+    return None
+
+def parse_exam_datetime(datetime_str: str) -> tuple[str, str, str]:
+    # Expected format: "Mi, 15. Jul. 2026, 08:30 - 09:30"
+    # Do, 1. Okt. 2026, 15:00 - 16:00
+    match = re.match(r"\w{2}, (\d{1,2}\. \w{3}\. \d{4}), (\d{2}:\d{2}) - (\d{2}:\d{2})", datetime_str)
+    if match:
+        date_str, start_time, end_time = match.groups()
+        return date_str, start_time, end_time
+    return "", "", ""
+
+def extract_exams(content: Tag | None, course_name: str, progress_tracker=None) -> list[ExamType]:
+    if content is None:
+        print(f"No exams content found for course: {course_name}")
+        return []
+
+    header = content.find("div", recursive=False)
+    if header is not None and header.get_text(" ", strip=True) != "Modulabschlussprüfungen":
+        print(f"No exams section found for course: {course_name}")
+        return []
+
+    exams = []
+    for event_row in content.select("table tbody tr"):
+        cells = [
+            span for span in event_row.select("td span")
+            if "lg:hidden" not in (span.get("class") or [])
+        ]
+        if len(cells) < 4:
+            continue
+        name, datetime_str, staff_raw, required_raw = [
+            cell.get_text(" ", strip=True) for cell in cells[:4]
+        ]
+        # Remove any leading/trailing whitespace from the name
+        # Also remove multiple spaces and newlines from the name
+        name = name.strip()
+        name = re.sub(r'\s+', ' ', name)
+        date_str, start_time, end_time = ("", "", "") if datetime_str == "k.Terminbuchung" else parse_exam_datetime(datetime_str)
+        staff = [s.strip() for s in re.split(r"[,;]", staff_raw) if s.strip()]
+        required = required_raw == "Ja"
+
+        if progress_tracker is not None:
+            progress_tracker.increment("exams")
+
+        exams.append({
+            "name": name,
+            "date": None if date_str == "" else _parse_date(date_str),
+            "start_time": None if start_time == "" else _parse_time(start_time),
+            "end_time": None if end_time == "" else _parse_time(end_time),
+            "staff": staff,
+            "required": required,
+        })
+    return exams

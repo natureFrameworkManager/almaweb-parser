@@ -41,6 +41,7 @@ _PHASE_COLORS: dict[str, str] = {
     "modules": "yellow",
     "courses": "blue",
     "events": "magenta",
+    "exams": "green",
     "rooms": "cyan",
 }
 
@@ -53,12 +54,13 @@ _PHASE_LABELS: dict[str, str] = {
     "modules": "Modules",
     "courses": "Courses",
     "events": "Events",
+    "exams": "Exams",
     "rooms": "Rooms",
 }
 
 # Phase grouping
 _CRAWLING_PHASES = ("semesters", "faculties", "nodes", "modules_found")
-_PARSING_PHASES = ("modules", "courses", "events", "rooms")
+_PARSING_PHASES = ("modules", "courses", "events", "exams", "rooms")
 
 
 class _RichLogHandler(Handler):

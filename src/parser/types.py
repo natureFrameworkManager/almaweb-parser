@@ -34,6 +34,14 @@ class CourseType(TypedDict):
     events: list[EventType]
     status: str
 
+class ExamType(TypedDict):
+    name: str
+    date: date
+    start_time: time
+    end_time: time
+    staff: list[str]
+    required: bool
+
 class ModuleType(TypedDict):
     name: str
     number: str
@@ -48,3 +56,4 @@ class ModuleType(TypedDict):
     exam_prerequisites: str
     prerequisites: dict[str, str]
     courses: list[CourseType | None]
+    exams: list[ExamType]

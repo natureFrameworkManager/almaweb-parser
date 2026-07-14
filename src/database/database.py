@@ -5,14 +5,14 @@ from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine, select
 
 try:
-    from parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType
+    from parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
 except ModuleNotFoundError:
-    from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType
+    from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
 
 try:
-    from .model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty
+    from .model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty, ModuleExam, ModuleExamStaffLink
 except ModuleNotFoundError:
-    from src.database.model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty
+    from src.database.model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty, ModuleExam, ModuleExamStaffLink
 
 DATABASE_URL = "sqlite:///database.db"
 
@@ -348,6 +348,24 @@ def _link_event_staff(session: Session, event_id: int, staff_id: int):
     if link is None:
         session.add(EventStaffLink(event_id=event_id, staff_id=staff_id))
 
+def _link_module_exam_staff(session: Session, exam_id: int, staff_id: int):
+    """
+    Create a link between a module exam and a staff member in the ModuleExamStaffLink association table, if it does not already exist.
+    """
+    try:
+        from .model import ModuleExamStaffLink
+    except ModuleNotFoundError:
+        from src.database.model import ModuleExamStaffLink
+
+    link = session.exec(
+        select(ModuleExamStaffLink)
+        .where(ModuleExamStaffLink.module_exam_id == exam_id)
+        .where(ModuleExamStaffLink.staff_id == staff_id)
+    ).first()
+
+    if link is None:
+        session.add(ModuleExamStaffLink(module_exam_id=exam_id, staff_id=staff_id))
+
 def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[int, bool]:
     """
     Look up a module by number and name. If it does not exist, insert it.
@@ -446,6 +464,51 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
 
     return course.id, True
 
+def _insert_exam_if_new(session: Session, module_id: int, exam_data: ExamType) -> tuple[int, bool]:
+    """
+    Insert an exam if no identical record (same date, time slot, and name) already exists.
+    If a matching exam is found, any staff from exam_data not yet linked to it are added.
+
+    Returns True if a new exam was inserted, False if an existing one was reused.
+    """
+
+    # Two exams are the same physical session when they share the same name, date, and time slot.
+    exam = session.exec(
+        select(ModuleExam)
+        .where(ModuleExam.module_id == module_id)
+        .where(ModuleExam.name == exam_data["name"])
+        .where(ModuleExam.required == exam_data["required"])
+    ).first()
+
+    if exam is not None:
+        if exam.id is None:
+            raise RuntimeError("Exam to add to database has no id")
+        # Merge staff: add any staff from this exam_data not yet linked to the existing exam
+        for staff_name in exam_data.get("staff", []):
+            staff_id = _get_or_insert_staff(session, staff_name)
+            _link_module_exam_staff(session, exam.id, staff_id)
+        return exam.id, False
+
+    # Unpacking of exam_data into ModuleExam constructor
+    exam = ModuleExam(
+        module_id=module_id,
+        name=exam_data["name"],
+        start_time=exam_data["start_time"],
+        end_time=exam_data["end_time"],
+        exam_date=exam_data["date"],
+        required=exam_data["required"]
+    )  # type: ignore
+    session.add(exam)
+    session.flush()
+    if exam.id is None:
+        raise RuntimeError("Could not get exam id after add and flush to database")
+
+    # Link staff members to the exam, inserting them if they do not already exist
+    for staff_name in exam_data.get("staff", []):
+        staff_id = _get_or_insert_staff(session, staff_name)
+        _link_module_exam_staff(session, exam.id, staff_id)
+
+    return exam.id, True
 
 def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, bool]:
     """
@@ -558,6 +621,13 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
             inserted_count["modules"] += 1
         if semester_id is not None:
             _link_module_semester(session, module_id, semester_id)
+
+        for exam_data in module_data["exams"]:
+            # Insert each exam if it does not already exist.
+            exam_id, exam_inserted = _insert_exam_if_new(session, module_id, exam_data)
+            if exam_inserted:
+                inserted_count["events"] += 1
+            inserted = inserted or exam_inserted
 
         for course_data in module_data["courses"]:
             # Get or insert each course, and get its corresponding ID for linking the events

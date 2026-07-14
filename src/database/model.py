@@ -59,6 +59,14 @@ class EventStaffLink(SQLModel, table=True):
     event_id: int = Field(foreign_key="event.id", primary_key=True)
     staff_id: int = Field(foreign_key="staff.id", primary_key=True)
 
+class ModuleExamStaffLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between ModuleExam and Staff.
+    """
+
+    module_exam_id: int = Field(foreign_key="moduleexam.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+
 class Module(SQLModel, table=True):
     """
     A university module (Lehrveranstaltung) as listed in AlmaWeb.
@@ -85,6 +93,7 @@ class Module(SQLModel, table=True):
     start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
     degrees: list["Degree"] = Relationship(back_populates="modules", link_model=ModuleDegreeLink)
     courses: list["Course"] = Relationship(back_populates="modules", link_model=ModuleCourseLink)
+    exams: list["ModuleExam"] = Relationship(back_populates="module")
 
 class Course(SQLModel, table=True):
     """
@@ -204,6 +213,7 @@ class Staff(SQLModel, table=True):
     modules: list["Module"] = Relationship(back_populates="responsible_persons", link_model=ModuleStaffLink)
     courses: list["Course"] = Relationship(back_populates="staff", link_model=CourseStaffLink)
     events: list["Event"] = Relationship(back_populates="staff", link_model=EventStaffLink)
+    exams: list["ModuleExam"] = Relationship(back_populates="staff", link_model=ModuleExamStaffLink)
 
 class Status(SQLModel, table=True):
     """
@@ -220,6 +230,22 @@ class EventType(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
+
+class ModuleExam(SQLModel, table=True):
+    """
+    An exam associated with a module.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    module_id: int = Field(foreign_key="module.id")
+    name: str = ""
+    exam_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    required: bool = False # Whether the exam is required for passing the module
+
+    staff: list["Staff"] = Relationship(back_populates="exams", link_model=ModuleExamStaffLink)
+    module: "Module" = Relationship(back_populates="exams")
 
 
 class SyncRun(SQLModel, table=True):
