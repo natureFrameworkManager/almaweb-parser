@@ -15,6 +15,7 @@ class LinkStats(BaseModel):
             "module_degree": 175,
             "module_semester": 290,
             "module_staff": 205,
+            "module_exam_staff": 50,
         }]},
     )
 
@@ -25,6 +26,7 @@ class LinkStats(BaseModel):
     module_degree: int
     module_semester: int
     module_staff: int
+    module_exam_staff: int
 
 
 class StatsResponse(BaseModel):
@@ -37,6 +39,7 @@ class StatsResponse(BaseModel):
             "degrees": 85,
             "events": 1200,
             "event_types": 6,
+            "exams": 100,
             "faculties": 14,
             "locations": 120,
             "modules": 280,
@@ -51,6 +54,7 @@ class StatsResponse(BaseModel):
                 "module_degree": 175,
                 "module_semester": 290,
                 "module_staff": 205,
+                "module_exam_staff": 50,
             },
         }]},
     )
@@ -60,6 +64,7 @@ class StatsResponse(BaseModel):
     degrees: int
     events: int
     event_types: int
+    exams: int
     faculties: int
     locations: int
     modules: int

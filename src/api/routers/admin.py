@@ -17,7 +17,7 @@ from sqlmodel import Session, col, select, func, text
 from .shared import SessionDep, PROBLEM_RESPONSES
 from schemas import StatsResponse, SyncRunRead
 from database.database import engine
-from database.model import Building, Course, Degree, Event, EventType, Faculty, Location, Module, Semester, Staff, Status, CourseEventLink, CourseStaffLink, EventStaffLink, ModuleCourseLink, ModuleDegreeLink, ModuleSemesterLink, ModuleStaffLink, SyncRun
+from database.model import Building, Course, Degree, Event, EventType, Faculty, Location, Module, ModuleExam, Semester, Staff, Status, CourseEventLink, CourseStaffLink, EventStaffLink, ModuleCourseLink, ModuleDegreeLink, ModuleSemesterLink, ModuleStaffLink, ModuleExamStaffLink, SyncRun
 
 router = APIRouter(prefix="/admin", tags=["Admin"], responses=PROBLEM_RESPONSES)
 
@@ -127,6 +127,7 @@ def get_stats(
         "degrees": session.exec(select(func.count()).select_from(Degree)).one(),
         "events": session.exec(select(func.count()).select_from(Event)).one(),
         "event_types": session.exec(select(func.count()).select_from(EventType)).one(),
+        "exams": session.exec(select(func.count()).select_from(ModuleExam)).one(),
         "faculties": session.exec(select(func.count()).select_from(Faculty)).one(),
         "locations": session.exec(select(func.count()).select_from(Location)).one(),
         "modules": session.exec(select(func.count()).select_from(Module)).one(),
@@ -141,6 +142,7 @@ def get_stats(
             "module_degree": session.exec(select(func.count()).select_from(ModuleDegreeLink)).one(),
             "module_semester": session.exec(select(func.count()).select_from(ModuleSemesterLink)).one(),
             "module_staff": session.exec(select(func.count()).select_from(ModuleStaffLink)).one(),
+            "module_exam_staff": session.exec(select(func.count()).select_from(ModuleExamStaffLink)).one(),
         }
     }
     return counts
