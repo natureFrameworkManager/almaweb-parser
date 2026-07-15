@@ -214,6 +214,38 @@ class EventRead(ReadSchema):
     courses: list[CourseRead] | None = None
 
 
+class ExamRead(ReadSchema):
+    """Mirrors ``database.model.Exam``.
+
+    The ``module_id`` column is a FK integer value by default.
+    When the corresponding relation is included via ``?include=module"``, the corresponding object is included.
+    """
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "name": "1 Praktikumsbericht",
+            "exam_date": "2025-11-03",
+            "start_time": "09:15:00",
+            "end_time": "10:45:00",
+            "required": True,
+            "module_id": 1
+        }]},
+    )
+
+    id: int | None = None
+    name: str | None = None
+    exam_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    required: bool | None = None
+    module_id: int | None = None
+    # Relationships (populated via ?include=)
+    staff: list[StaffRead] | None = None
+    module: ModuleRead | None = None
+
+
 class CourseRead(ReadSchema):
     """Mirrors ``database.model.Course``.
 
@@ -304,5 +336,6 @@ DegreeRead.model_rebuild()
 LocationRead.model_rebuild()
 WeeklyRead.model_rebuild()
 EventRead.model_rebuild()
+ExamRead.model_rebuild()
 CourseRead.model_rebuild()
 ModuleRead.model_rebuild()

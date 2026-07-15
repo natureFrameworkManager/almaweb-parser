@@ -10,6 +10,7 @@ from .models import (
     LocationRead,
     WeeklyRead,
     EventRead,
+    ExamRead,
     CourseRead,
     ModuleRead,
 )

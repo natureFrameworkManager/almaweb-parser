@@ -14,7 +14,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from database.database import create_db_and_tables
-from routers import modules, events, courses, admin, catalog, degrees, faculties, locations, schedule, semesters, staff
+from routers import modules, events, courses, admin, catalog, degrees, faculties, locations, schedule, semesters, staff, exams
 from schemas import Problem
 
 HTTP_STATUS_TITLES: dict[int, str] = {
@@ -52,7 +52,7 @@ app = FastAPI(
     title="AlmaWeb API",
     summary="Parsed data from AlmaWeb in a structured format",
     description="API for accessing parsed data from AlmaWeb, which includes modules, courses, and events. Faster and more convenient than navigating the large website tree directly, with additional filtering and querying capabilities.",
-    version="1.0.0",
+    version="1.0.1",
     root_path=PROXY_ROOT_PATH
 )
 
@@ -82,6 +82,7 @@ api_router = APIRouter(prefix="")
 api_router.include_router(modules.router)
 api_router.include_router(courses.router)
 api_router.include_router(events.router)
+api_router.include_router(exams.router)
 api_router.include_router(degrees.router)
 api_router.include_router(staff.router)
 api_router.include_router(locations.location_router)
