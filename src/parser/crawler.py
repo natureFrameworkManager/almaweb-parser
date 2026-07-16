@@ -79,7 +79,7 @@ class LectureSpider(scrapy.Spider):
         if len(navigationNodes) == 0 and len(moduleNodes) == 0 and len(breadcrumbs) == 0:
             semesterNodes = response.css('.linkItemContainer .linkItem[title=Vorlesungsverzeichnis] a.depth_2')
             # Only follow the first semester node if it exists, as we only want to parse one semester at a time
-            semesterNodes = [semesterNodes[0]] if semesterNodes else []
+            semesterNodes = [semesterNodes[1]] if semesterNodes else []
             for anchor in semesterNodes:
                 text = anchor.css("::text").get()
                 if not text:
@@ -117,8 +117,8 @@ class LectureSpider(scrapy.Spider):
                 continue
             name = text.strip()
             # Only follow navigation nodes that are part of the "10 - Fakultät für Mathematik und Informatik" faculty or its subcategories
-            # if not (name.startswith("10 - Fakultät für Mathematik und Informatik") or (len(breadcrumbs) > 1 and breadcrumbs[1].startswith("10 - Fakultät für Mathematik und Informatik"))):
-            #     continue
+            if not (name.startswith("10 - Fakultät für Mathematik und Informatik") or (len(breadcrumbs) > 1 and breadcrumbs[1].startswith("10 - Fakultät für Mathematik und Informatik"))):
+                continue
             url = anchor.attrib.get("href")
             if not url:
                 continue
