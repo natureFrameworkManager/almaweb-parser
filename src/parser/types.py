@@ -45,7 +45,7 @@ class ExamType(TypedDict):
 class ModuleType(TypedDict):
     name: str
     number: str
-    path: list[str]
+    path: list[str] | list[list[str]]
     responsible_person: str
     duration_semesters: int
     credits: float

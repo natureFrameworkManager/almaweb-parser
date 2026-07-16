@@ -323,7 +323,7 @@ class ModuleRead(ReadSchema):
     exam_prerequisites: str | None = None
     prerequisites: dict[str, str] | None = None
     faculty_id: int | None = None
-    path: list[str] | None = None
+    path: list[str] | list[list[str]] | None = None
     # Relationships (populated via ?include=)
     faculty: FacultyRead | None = None
     responsible_persons: list[StaffRead] | None = None

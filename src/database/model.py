@@ -19,6 +19,14 @@ class ModuleSemesterLink(SQLModel, table=True):
     module_id: int = Field(foreign_key="module.id", primary_key=True)
     semester_id: int = Field(foreign_key="semester.id", primary_key=True)
 
+class ModuleStartSemesterLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Module and the starting Semester.
+    """
+
+    module_id: int = Field(foreign_key="module.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+
 class ModuleCourseLink(SQLModel, table=True):
     """
     Association table for the many-to-many relationship between Module and Course.
@@ -112,9 +120,10 @@ class Module(SQLModel, table=True):
     faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the module belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="modules")
-    path: list[str] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
+    path: list[str] | list[list[str]] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
     responsible_persons: list["Staff"] = Relationship(back_populates="modules", link_model=ModuleStaffLink)
-    start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
+    start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleStartSemesterLink)
+    semesters: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
     degrees: list["Degree"] = Relationship(back_populates="modules", link_model=ModuleDegreeLink)
     courses: list["Course"] = Relationship(back_populates="modules", link_model=ModuleCourseLink)
     exams: list["ModuleExam"] = Relationship(back_populates="module")

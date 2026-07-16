@@ -17,6 +17,12 @@ def _silence_httpx_logs() -> None:
 def _cancelled(cancel_event: Event | None) -> bool:
     return cancel_event is not None and cancel_event.is_set()
 
+def _is_multidimensional(arr: list) -> bool:
+    for element in arr:
+        if isinstance(element, list):
+            return True
+    return False
+
 
 # Silence noisy httpx logs as soon as this module is imported.
 _silence_httpx_logs()

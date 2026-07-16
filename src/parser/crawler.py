@@ -79,7 +79,7 @@ class LectureSpider(scrapy.Spider):
         if len(navigationNodes) == 0 and len(moduleNodes) == 0 and len(breadcrumbs) == 0:
             semesterNodes = response.css('.linkItemContainer .linkItem[title=Vorlesungsverzeichnis] a.depth_2')
             # Only follow the first semester node if it exists, as we only want to parse one semester at a time
-            semesterNodes = [semesterNodes[1]] if semesterNodes else []
+            # semesterNodes = [semesterNodes[1]] if semesterNodes else []
             for anchor in semesterNodes:
                 text = anchor.css("::text").get()
                 if not text:
@@ -194,7 +194,7 @@ class LectureSpider(scrapy.Spider):
             gc.collect()
 
             handleModuleList(
-                [ModuleLink(name=module.name, url=module.url, path=module.path[-1]) for module in module_list],
+                [ModuleLink(name=module.name, url=module.url, path=module.path) for module in module_list],
                 cancel_event=cancel_event,
                 progress_tracker=self.progress_tracker if self.progress_tracker.enabled else None,
             )

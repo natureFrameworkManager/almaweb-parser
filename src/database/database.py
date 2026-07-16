@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine, select
+from sqlalchemy import null
 
 try:
     from parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
@@ -10,13 +11,18 @@ except ModuleNotFoundError:
     from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
 
 try:
+    from parser.utils import _is_multidimensional
+except ModuleNotFoundError:
+    from src.parser.utils import _is_multidimensional
+
+try:
     from .model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, 
                         ModuleStaffLink, CourseStaffLink, EventStaffLink,
-                        ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink)
+                        ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink)
 except ModuleNotFoundError:
     from src.database.model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, 
                                     ModuleStaffLink, CourseStaffLink, EventStaffLink,
-                                    ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink)
+                                    ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink)
 DATABASE_URL = "sqlite:///database.db"
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -238,6 +244,19 @@ def _link_module_semester(session: Session, module_id: int, semester_id: int):
     if link is None:
         session.add(ModuleSemesterLink(module_id=module_id, semester_id=semester_id))
 
+def _link_module_start_semester(session: Session, module_id: int, semester_id: int):
+    """
+    Create a link between a module and its starting semester in the ModuleStartSemesterLink association table, if it does not already exist.
+    """
+    link = session.exec(
+        select(ModuleStartSemesterLink)
+        .where(ModuleStartSemesterLink.module_id == module_id)
+        .where(ModuleStartSemesterLink.semester_id == semester_id)
+    ).first()
+
+    if link is None:
+        session.add(ModuleStartSemesterLink(module_id=module_id, semester_id=semester_id))
+
 def _link_course_event(session: Session, course_id: int, event_id: int):
     """
     Create a link between a course and an event in the CourseEventLink association table, if it does not already exist.
@@ -449,11 +468,17 @@ def _insert_exam_if_new(session: Session, module_id: int, exam_data: ExamType) -
     """
 
     # Two exams are the same physical session when they share the same name, date, and time slot.
+    if exam_data["date"] is None:
+        date_condition = ModuleExam.exam_date == null()
+    else:
+        date_condition = ModuleExam.exam_date == exam_data["date"]
+    
     exam = session.exec(
         select(ModuleExam)
         .where(ModuleExam.module_id == module_id)
         .where(ModuleExam.name == exam_data["name"])
         .where(ModuleExam.required == exam_data["required"])
+        .where(date_condition)
     ).first()
 
     if exam is not None:
@@ -556,17 +581,31 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
         "events": 0
     }
     with Session(engine) as session:
-        faculty_name = None
-        faculty_prefix = None
+        faculty_name: str | None = None
+        faculty_prefix: int | None = None
         if len(module_data["path"]) > 0:
             # Fakultät started mit "(A)[0-9][0-9] - ...", z.B. "A10 - Fakultät für Mathematik und Informatik" or "A07 - Wirtschaftswissenschaftliche Fakultät"
             # We extract the faculty name from the navigation path, which is needed for the foreign key relationship. If no faculty can be identified, we leave it null.
             # The faculty name is usually the third element in the path, but we check all elements to be safe, because the structure is not perfectly consistent. We look for an element that starts with a pattern like "A10 - Fakultät für Mathematik und Informatik" and extract the faculty name from it.
-            for path_element in module_data["path"]:
-                match = re.match(r"^(?:A?)(\d{2}) - ", path_element)
-                if match:
-                    faculty_prefix = int(match.group(1)) # The prefix is the number before the " - "
-                    faculty_name = path_element
+            path_obj: list[list[str]] = []
+            if _is_multidimensional(module_data["path"]):
+                path_obj = module_data["path"] # type: ignore
+            else:
+                path_obj = [module_data["path"]] # type: ignore
+            for path_group in path_obj:
+                for path_element in path_group:
+                    match = re.match(r"^(?:A?)(\d{2}) - ", path_element)
+                    if match:
+                        faculty_prefix = int(match.group(1)) # The prefix is the number before the " - "
+                        # check that the faculty prefix is the same as the module number prefix, if the module number has a prefix
+                        module_number_prefix_match = re.match(r"^A?(\d{2})", module_data["number"])
+                        if module_number_prefix_match:
+                            module_number_prefix = int(module_number_prefix_match.group(1))
+                            if faculty_prefix != module_number_prefix:
+                                continue # Skip this path element if the faculty prefix does not match the module number prefix
+                        faculty_name = path_element
+                        break
+                if faculty_name:
                     break
         if faculty_name and faculty_prefix is not None:
             get_or_insert_faculty(session, faculty_name, faculty_prefix)
@@ -576,17 +615,28 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
         semester_term = None
         if len(module_data["path"]) > 0:
             # We also try to extract the semester from the navigation path, looking for an element that starts with "SoSe" or "WiSe"
-            for path_element in module_data["path"]:
-                if path_element.startswith("SoSe") or path_element.startswith("WiSe"):
-                    semester_name = path_element
-                    if path_element.startswith("SoSe"):
-                        semester_term = "SoSe"
-                    elif path_element.startswith("WiSe"):
-                        semester_term = "WiSe"
-                    year_match = re.search(r"\d{2,4}", path_element)
-                    if year_match:
-                        semester_year = int(year_match.group(0))
-                    break
+            path_obj: list[list[str]] = []
+            if _is_multidimensional(module_data["path"]):
+                path_obj = module_data["path"] # type: ignore
+            else:
+                path_obj = [module_data["path"]] # type: ignore
+            
+            for path_group in path_obj:
+                for path_element in path_group:
+                    if path_element.startswith("SoSe") or path_element.startswith("WiSe"):
+                        if semester_name is not None and semester_name != path_element:
+                            print(f"Warning: Multiple semester names found in module path for module {module_data['number']}: {semester_name} and {path_element}. Using the first one.")
+                            print(f"Module path: {module_data['path']}")
+                            break
+                        semester_name = path_element
+                        if path_element.startswith("SoSe"):
+                            semester_term = "SoSe"
+                        elif path_element.startswith("WiSe"):
+                            semester_term = "WiSe"
+                        year_match = re.search(r"\d{2,4}", path_element)
+                        if year_match:
+                            semester_year = int(year_match.group(0))
+                        break
         semester_id = None
         if semester_name and semester_year and semester_term:
             semester_id = _get_or_insert_semester(session, semester_name, semester_year, semester_term)
@@ -597,7 +647,20 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
             inserted_count["modules"] += 1
         if semester_id is not None:
             _link_module_semester(session, module_id, semester_id)
-
+        if module_data.get("start_semester"):
+            start_semester_name = module_data["start_semester"]
+            start_semester_year = None
+            start_semester_term = None
+            if start_semester_name.startswith("SoSe"):
+                start_semester_term = "SoSe"
+            elif start_semester_name.startswith("WiSe"):
+                start_semester_term = "WiSe"
+            year_match = re.search(r"\d{2,4}", start_semester_name)
+            if year_match:
+                start_semester_year = int(year_match.group(0))
+            if start_semester_year and start_semester_term:
+                start_semester_id = _get_or_insert_semester(session, start_semester_name, start_semester_year, start_semester_term)
+                _link_module_start_semester(session, module_id, start_semester_id)
         for exam_data in module_data["exams"]:
             # Insert each exam if it does not already exist.
             exam_id, exam_inserted = _insert_exam_if_new(session, module_id, exam_data)
