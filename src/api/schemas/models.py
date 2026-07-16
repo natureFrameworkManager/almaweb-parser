@@ -53,6 +53,7 @@ class StaffRead(ReadSchema):
     modules: list[ModuleRead] | None = None
     courses: list[CourseRead] | None = None
     events: list[EventRead] | None = None
+    exams: list[ExamRead] | None = None
 
 
 class SemesterRead(ReadSchema):
@@ -69,6 +70,9 @@ class SemesterRead(ReadSchema):
     term: str | None = None
     # Relationships (populated via ?include=)
     modules: list[ModuleRead] | None = None
+    courses: list[CourseRead] | None = None
+    events: list[EventRead] | None = None
+    exams: list[ExamRead] | None = None
 
 
 class FacultyRead(ReadSchema):
@@ -211,6 +215,7 @@ class EventRead(ReadSchema):
     # Relationships (populated via ?include=)
     location: LocationRead | None = None
     staff: list[StaffRead] | None = None
+    semesters: list[SemesterRead] | None = None
     courses: list[CourseRead] | None = None
 
 
@@ -243,6 +248,7 @@ class ExamRead(ReadSchema):
     module_id: int | None = None
     # Relationships (populated via ?include=)
     staff: list[StaffRead] | None = None
+    semesters: list[SemesterRead] | None = None
     module: ModuleRead | None = None
 
 
@@ -278,6 +284,7 @@ class CourseRead(ReadSchema):
     status: int | StatusRead | None = None
     # Relationships (populated via ?include=)
     staff: list[StaffRead] | None = None
+    semesters: list[SemesterRead] | None = None
     modules: list[ModuleRead] | None = None
     events: list[EventRead] | None = None
 
@@ -321,6 +328,8 @@ class ModuleRead(ReadSchema):
     faculty: FacultyRead | None = None
     responsible_persons: list[StaffRead] | None = None
     start_semester: list[SemesterRead] | None = None
+    semesters: list[SemesterRead] | None = None
+    exams: list[ExamRead] | None = None
     degrees: list[DegreeRead] | None = None
     courses: list[CourseRead] | None = None
 

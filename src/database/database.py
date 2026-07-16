@@ -10,10 +10,13 @@ except ModuleNotFoundError:
     from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
 
 try:
-    from .model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty, ModuleExam, ModuleExamStaffLink
+    from .model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, 
+                        ModuleStaffLink, CourseStaffLink, EventStaffLink,
+                        ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink)
 except ModuleNotFoundError:
-    from src.database.model import Course, Event, Module, ModuleCourseLink, CourseEventLink, Faculty, ModuleExam, ModuleExamStaffLink
-
+    from src.database.model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, 
+                                    ModuleStaffLink, CourseStaffLink, EventStaffLink,
+                                    ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink)
 DATABASE_URL = "sqlite:///database.db"
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -67,12 +70,6 @@ def _get_or_insert_status(session: Session, name: str) -> int:
 
     Returns the course status ID.
     """
-
-    try:
-        from .model import Status
-    except ModuleNotFoundError:
-        from src.database.model import Status
-
     status = session.exec(select(Status).where(Status.name == name)).first()
     if status is not None:
         if status.id is None:
@@ -93,11 +90,6 @@ def _get_or_insert_staff(session: Session, name: str) -> int:
     Returns the staff member ID.
     """
 
-    try:
-        from .model import Staff
-    except ModuleNotFoundError:
-        from src.database.model import Staff
-
     staff = session.exec(select(Staff).where(Staff.name == name)).first()
     if staff is not None:
         if staff.id is None:
@@ -117,12 +109,6 @@ def _get_or_insert_building(session: Session, building_data: BuildingType) -> in
 
     Returns the building ID.
     """
-
-    try:
-        from .model import Building
-    except ModuleNotFoundError:
-        from src.database.model import Building
-
     building = session.exec(
         select(Building)
         .where(Building.name == building_data["name"])
@@ -151,13 +137,7 @@ def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
     Look up a location (room) by its external ID, name, and building ID. If it does not exist, insert it.
 
     Returns the location ID.
-    """
-
-    try:
-        from .model import Location
-    except ModuleNotFoundError:
-        from src.database.model import Location
-    
+    """    
     building_id = _get_or_insert_building(session, room_data["building"])
 
     location = session.exec(
@@ -193,12 +173,6 @@ def get_or_insert_faculty(session: Session, name: str, prefix: int) -> int:
 
     Returns the faculty ID.
     """
-
-    try:
-        from .model import Faculty
-    except ModuleNotFoundError:
-        from src.database.model import Faculty
-
     faculty = session.exec(select(Faculty).where(Faculty.name == name)).first()
     if faculty is not None:
         if faculty.id is None:
@@ -218,12 +192,6 @@ def _get_or_insert_semester(session: Session, name: str, year: int, term: str) -
 
     Returns the semester ID.
     """
-
-    try:
-        from .model import Semester
-    except ModuleNotFoundError:
-        from src.database.model import Semester
-
     semester = session.exec(select(Semester).where(Semester.name == name)).first()
     if semester is not None:
         if semester.id is None:
@@ -241,12 +209,6 @@ def _find_faculty_by_prefix(session: Session, prefix: int) -> Faculty | None:
     """
     Look up a faculty by its prefix (short code). Returns the Faculty object if found, or None if no faculty with the given prefix exists.
     """
-
-    try:
-        from .model import Faculty
-    except ModuleNotFoundError:
-        from src.database.model import Faculty
-
     faculty = session.exec(select(Faculty).where(Faculty.prefix == prefix)).first()
     return faculty
 
@@ -267,11 +229,6 @@ def _link_module_semester(session: Session, module_id: int, semester_id: int):
     """
     Create a link between a module and a semester in the ModuleSemesterLink association table, if it does not already exist.
     """
-    try:
-        from .model import ModuleSemesterLink
-    except ModuleNotFoundError:
-        from src.database.model import ModuleSemesterLink
-
     link = session.exec(
         select(ModuleSemesterLink)
         .where(ModuleSemesterLink.module_id == module_id)
@@ -294,15 +251,23 @@ def _link_course_event(session: Session, course_id: int, event_id: int):
     if link is None:
         session.add(CourseEventLink(course_id=course_id, event_id=event_id))
 
+def _link_course_semester(session: Session, course_id: int, semester_id: int):
+    """
+    Create a link between a course and a semester in the CourseSemesterLink association table, if it does not already exist.
+    """
+    link = session.exec(
+        select(CourseSemesterLink)
+        .where(CourseSemesterLink.course_id == course_id)
+        .where(CourseSemesterLink.semester_id == semester_id)
+    ).first()
+
+    if link is None:
+        session.add(CourseSemesterLink(course_id=course_id, semester_id=semester_id))
+
 def _link_module_responsible_person(session: Session, module_id: int, staff_id: int):
     """
     Create a link between a module and its responsible person in the ModuleStaffLink association table, if it does not already exist.
     """
-    try:
-        from .model import ModuleStaffLink
-    except ModuleNotFoundError:
-        from src.database.model import ModuleStaffLink
-
     link = session.exec(
         select(ModuleStaffLink)
         .where(ModuleStaffLink.module_id == module_id)
@@ -316,11 +281,6 @@ def _link_course_staff(session: Session, course_id: int, staff_id: int):
     """
     Create a link between a course and a staff member in the CourseStaffLink association table, if it does not already exist.
     """
-    try:
-        from .model import CourseStaffLink
-    except ModuleNotFoundError:
-        from src.database.model import CourseStaffLink
-
     link = session.exec(
         select(CourseStaffLink)
         .where(CourseStaffLink.course_id == course_id)
@@ -334,11 +294,6 @@ def _link_event_staff(session: Session, event_id: int, staff_id: int):
     """
     Create a link between an event and a staff member in the EventStaffLink association table, if it does not already exist.
     """
-    try:
-        from .model import EventStaffLink
-    except ModuleNotFoundError:
-        from src.database.model import EventStaffLink
-
     link = session.exec(
         select(EventStaffLink)
         .where(EventStaffLink.event_id == event_id)
@@ -348,15 +303,23 @@ def _link_event_staff(session: Session, event_id: int, staff_id: int):
     if link is None:
         session.add(EventStaffLink(event_id=event_id, staff_id=staff_id))
 
+def _link_event_semester(session: Session, event_id: int, semester_id: int):
+    """
+    Create a link between an event and a semester in the EventSemesterLink association table, if it does not already exist.
+    """
+    link = session.exec(
+        select(EventSemesterLink)
+        .where(EventSemesterLink.event_id == event_id)
+        .where(EventSemesterLink.semester_id == semester_id)
+    ).first()
+
+    if link is None:
+        session.add(EventSemesterLink(event_id=event_id, semester_id=semester_id))
+
 def _link_module_exam_staff(session: Session, exam_id: int, staff_id: int):
     """
     Create a link between a module exam and a staff member in the ModuleExamStaffLink association table, if it does not already exist.
     """
-    try:
-        from .model import ModuleExamStaffLink
-    except ModuleNotFoundError:
-        from src.database.model import ModuleExamStaffLink
-
     link = session.exec(
         select(ModuleExamStaffLink)
         .where(ModuleExamStaffLink.module_exam_id == exam_id)
@@ -365,6 +328,19 @@ def _link_module_exam_staff(session: Session, exam_id: int, staff_id: int):
 
     if link is None:
         session.add(ModuleExamStaffLink(module_exam_id=exam_id, staff_id=staff_id))
+
+def _link_module_exam_semester(session: Session, exam_id: int, semester_id: int):
+    """
+    Create a link between a module exam and a semester in the ModuleExamSemesterLink association table, if it does not already exist.
+    """
+    link = session.exec(
+        select(ModuleExamSemesterLink)
+        .where(ModuleExamSemesterLink.module_exam_id == exam_id)
+        .where(ModuleExamSemesterLink.semester_id == semester_id)
+    ).first()
+
+    if link is None:
+        session.add(ModuleExamSemesterLink(module_exam_id=exam_id, semester_id=semester_id))
 
 def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[int, bool]:
     """
@@ -628,6 +604,8 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
             if exam_inserted:
                 inserted_count["events"] += 1
             inserted = inserted or exam_inserted
+            if semester_id is not None:
+                _link_module_exam_semester(session, exam_id, semester_id)
 
         for course_data in module_data["courses"]:
             # Get or insert each course, and get its corresponding ID for linking the events
@@ -635,6 +613,8 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
                 continue
             course_id, course_inserted = _get_or_insert_course(session, course_data)
             _link_module_course(session, module_id, course_id)
+            if semester_id is not None:
+                _link_course_semester(session, course_id, semester_id)
             if course_inserted:
                 inserted_count["courses"] += 1
             inserted = inserted or course_inserted
@@ -645,6 +625,8 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
                 # Insert each event if it does not already exist.
                 event_id, event_inserted = _insert_event_if_new(session, event_data)
                 _link_course_event(session, course_id, event_id)
+                if semester_id is not None:
+                    _link_event_semester(session, event_id, semester_id)
                 if event_inserted:
                     inserted_count["events"] += 1
                 inserted = inserted or event_inserted

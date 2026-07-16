@@ -51,6 +51,14 @@ class CourseStaffLink(SQLModel, table=True):
     course_id: int = Field(foreign_key="course.id", primary_key=True)
     staff_id: int = Field(foreign_key="staff.id", primary_key=True)
 
+class CourseSemesterLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Course and Semester.
+    """
+
+    course_id: int = Field(foreign_key="course.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+
 class EventStaffLink(SQLModel, table=True):
     """
     Association table for the many-to-many relationship between Event and Staff.
@@ -59,6 +67,14 @@ class EventStaffLink(SQLModel, table=True):
     event_id: int = Field(foreign_key="event.id", primary_key=True)
     staff_id: int = Field(foreign_key="staff.id", primary_key=True)
 
+class EventSemesterLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between Event and Semester.
+    """
+
+    event_id: int = Field(foreign_key="event.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+
 class ModuleExamStaffLink(SQLModel, table=True):
     """
     Association table for the many-to-many relationship between ModuleExam and Staff.
@@ -66,6 +82,14 @@ class ModuleExamStaffLink(SQLModel, table=True):
 
     module_exam_id: int = Field(foreign_key="moduleexam.id", primary_key=True)
     staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+
+class ModuleExamSemesterLink(SQLModel, table=True):
+    """
+    Association table for the many-to-many relationship between ModuleExam and Semester.
+    """
+
+    module_exam_id: int = Field(foreign_key="moduleexam.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
 
 class Module(SQLModel, table=True):
     """
@@ -113,6 +137,7 @@ class Course(SQLModel, table=True):
     status: int = Field(foreign_key="status.id")
 
     staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
+    semesters: list["Semester"] = Relationship(back_populates="courses", link_model=CourseSemesterLink)
     modules: list["Module"] = Relationship(back_populates="courses", link_model=ModuleCourseLink)
     events: list["Event"] = Relationship(back_populates="courses", link_model=CourseEventLink)
 
@@ -134,6 +159,7 @@ class Event(SQLModel, table=True):
 
     location: "Location" = Relationship(back_populates="events")
     staff: list["Staff"] = Relationship(back_populates="events", link_model=EventStaffLink)
+    semesters: list["Semester"] = Relationship(back_populates="events", link_model=EventSemesterLink)
     courses: list["Course"] = Relationship(back_populates="events", link_model=CourseEventLink)
 
 class Location(SQLModel, table=True):
@@ -201,6 +227,9 @@ class Semester(SQLModel, table=True):
     term: str = "" # "SoSe" for summer semester, "WiSe" for winter semester, etc.
 
     modules: list["Module"] = Relationship(back_populates="start_semester", link_model=ModuleSemesterLink)
+    courses: list["Course"] = Relationship(back_populates="semesters", link_model=CourseSemesterLink)
+    events: list["Event"] = Relationship(back_populates="semesters", link_model=EventSemesterLink)
+    exams: list["ModuleExam"] = Relationship(back_populates="semesters", link_model=ModuleExamSemesterLink)
 
 class Staff(SQLModel, table=True):
     """
@@ -245,6 +274,7 @@ class ModuleExam(SQLModel, table=True):
     required: bool = False # Whether the exam is required for passing the module
 
     staff: list["Staff"] = Relationship(back_populates="exams", link_model=ModuleExamStaffLink)
+    semesters: list["Semester"] = Relationship(back_populates="exams", link_model=ModuleExamSemesterLink)
     module: "Module" = Relationship(back_populates="exams")
 
 
