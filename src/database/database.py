@@ -378,6 +378,28 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
     if module is not None:
         if module.id is None:
             raise RuntimeError("Module to add to database has no id")
+        # Add path elements not already present in the module's path
+        # Handle correctly that the given path and the existing path can be either list[str] or list[list[str]]
+        # Normalise both representations to list[list[str]] so we can compare apples-to-apples
+        if _is_multidimensional(module_data["path"]):
+            new_paths: list[list[str]] = module_data["path"]  # type: ignore[assignment]
+        else:
+            new_paths = [[p] for p in module_data["path"]]
+
+        if _is_multidimensional(module.path):
+            existing_normalised: list[list[str]] = module.path  # type: ignore[assignment]
+        else:
+            existing_normalised = [[p] for p in module.path]
+
+        for new_path in new_paths:
+            if new_path not in existing_normalised:
+                # Append in the same format as the existing path column
+                if _is_multidimensional(module.path):
+                    module.path.append(new_path)  # type: ignore[arg-type]
+                else:
+                    for item in new_path:
+                        if item not in module.path:
+                            module.path.append(item)  # type: ignore[arg-type]
         return module.id, False
     
     faculty_id = None
