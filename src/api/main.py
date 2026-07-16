@@ -52,7 +52,7 @@ app = FastAPI(
     title="AlmaWeb API",
     summary="Parsed data from AlmaWeb in a structured format",
     description="API for accessing parsed data from AlmaWeb, which includes modules, courses, and events. Faster and more convenient than navigating the large website tree directly, with additional filtering and querying capabilities.",
-    version="1.0.1",
+    version="1.0.2",
     root_path=PROXY_ROOT_PATH
 )
 
