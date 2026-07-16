@@ -117,8 +117,8 @@ class LectureSpider(scrapy.Spider):
                 continue
             name = text.strip()
             # Only follow navigation nodes that are part of the "10 - Fakultät für Mathematik und Informatik" faculty or its subcategories
-            if not (name.startswith("10 - Fakultät für Mathematik und Informatik") or (len(breadcrumbs) > 1 and breadcrumbs[1].startswith("10 - Fakultät für Mathematik und Informatik"))):
-                continue
+            # if not (name.startswith("10 - Fakultät für Mathematik und Informatik") or (len(breadcrumbs) > 1 and breadcrumbs[1].startswith("10 - Fakultät für Mathematik und Informatik"))):
+            #     continue
             url = anchor.attrib.get("href")
             if not url:
                 continue
