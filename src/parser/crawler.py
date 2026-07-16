@@ -1,6 +1,7 @@
 import json
 import re
 import signal
+import gc
 from threading import Event
 from typing import Any
 
@@ -188,6 +189,9 @@ class LectureSpider(scrapy.Spider):
                 self.progress_tracker.start_parsing()
 
             print(f"Found {len(module_list)} unique modules. Starting parsing...")
+
+            # Clear memory before starting module parsing to avoid memory issues with large module lists
+            gc.collect()
 
             handleModuleList(
                 [ModuleLink(name=module.name, url=module.url, path=module.path[-1]) for module in module_list],
