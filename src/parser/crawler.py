@@ -193,8 +193,10 @@ class LectureSpider(scrapy.Spider):
             # Clear memory before starting module parsing to avoid memory issues with large module lists
             gc.collect()
 
+            # Use the module_list directly instead of creating a duplicate list comprehension.
+            # The module_list already contains ModuleLink instances from module_set().
             handleModuleList(
-                [ModuleLink(name=module.name, url=module.url, path=module.path) for module in module_list],
+                module_list,
                 cancel_event=cancel_event,
                 progress_tracker=self.progress_tracker if self.progress_tracker.enabled else None,
             )
@@ -202,6 +204,9 @@ class LectureSpider(scrapy.Spider):
             if self.progress_tracker.enabled:
                 self.progress_tracker.finish()
         finally:
+            # Free class-level data to reduce memory pressure after parsing completes
+            self.found_modules.clear()
+            self.found_faculties.clear()
             signal.signal(signal.SIGINT, previous_sigint_handler)
         
     def module_set(self, modules: list[ModuleLink]) -> list[ModuleLink]:

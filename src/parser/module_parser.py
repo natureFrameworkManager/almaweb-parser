@@ -1,3 +1,4 @@
+import gc
 import re
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from threading import Event
@@ -45,9 +46,7 @@ _EXAM_LABEL_MAP: dict[str, str] = {
 
 def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None, progress_tracker=None):
     if not moduleList:
-        return []
-
-    parsed_by_index: dict[int, ModuleType] = {}
+        return
 
     # One shared client for all module and course requests; the pool size covers
     # up to MAX_CONCURRENT_MODULE_REQUESTS modules each fetching
@@ -75,7 +74,21 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                 for future in done:
                     idx, parsed = future.result()
                     if parsed is not None:
-                        parsed_by_index[idx] = parsed
+                        try:
+                            from database.database import insert_module_graph
+                        except ModuleNotFoundError:
+                            from src.database.database import insert_module_graph
+                        try:
+                            insert_module_graph(parsed)
+                        except Exception as e:
+                            print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
+                            raise
+                        # Free the parsed module data immediately after DB insert
+                        del parsed
+
+                # Run garbage collection after each batch to reclaim memory from
+                # completed worker threads (soup trees, response bodies, etc.)
+                gc.collect()
 
                 # Render progress after each batch of completed modules
                 if progress_tracker is not None:
@@ -86,35 +99,8 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                     future.cancel()
                 executor.shutdown(wait=False, cancel_futures=True)
 
-    # Collect modules in order, then insert into database serially
-    # This decouples network I/O (thread pool) from database I/O (serial),
-    # and frees memory as we go by deleting each module after insertion.
-    modules = []
-    for idx in sorted(parsed_by_index.keys()):
-        parsed = parsed_by_index[idx]
-        if parsed is None:
-            continue
-        try:
-            from database.database import insert_module_graph
-        except ModuleNotFoundError:
-            from src.database.database import insert_module_graph
-        try:
-            insert_module_graph(parsed)
-        except Exception as e:
-            print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
-            raise
-        modules.append(parsed)
-        # Free the parsed module data immediately after DB insert
-        del parsed_by_index[idx]
-
     if _cancelled(cancel_event):
-        print(f"Saved {len(modules)} parsed modules before interruption.")
-
-    # Print the parsed modules in a structured format to a file for easier inspection and debugging
-    # with open("parsed_modules.json", "w", encoding="utf-8") as f:
-    #     import json
-    #     json.dump(print_modules(modules), f, ensure_ascii=False, indent=4)
-    return modules
+        print(f"Parsing was interrupted. Modules already inserted are saved.")
 
 def print_modules(modules: list[ModuleType]):
     def print_room(room: RoomType | None):
@@ -216,6 +202,7 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         progress_tracker.set_current_module(f"{number} - {name}")
 
     values = extract_module_values(soup.select_one("#contentlayoutleft"))
+    # Extract course link URLs using BeautifulSoup (the module page count is low)
     course_urls = [
         str(a["href"])
         for a in soup.find_all("a", attrs={"name": "eventLink"})
@@ -226,6 +213,9 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
     course_urls = [x for x in course_urls if not (x in seen or seen.add(x))]
     courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client, progress_tracker=progress_tracker)
     exams = extract_exams(find_exam_section(soup.select_one("#contentlayoutleft")), name, progress_tracker=progress_tracker)
+    # Free BeautifulSoup tree and raw HTML after extracting all data
+    del soup
+    del html_content
 
     module: ModuleType = {
         "name": name,

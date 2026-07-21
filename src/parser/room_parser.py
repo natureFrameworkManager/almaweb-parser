@@ -112,6 +112,10 @@ def parseRoom(html_content: str) -> RoomType | None:
         "building": building,
     }
 
+    # Free BeautifulSoup tree and raw HTML after extracting all data
+    del soup
+    del html_content
+
     return room
 
 

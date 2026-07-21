@@ -90,7 +90,7 @@ def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_e
         if response.status_code == 200:
             if _cancelled(cancel_event):
                 return index, False, None
-            return index, True, parseCourse(response.text, client=client, progress_tracker=progress_tracker)
+            return index, True, parseCourse(response.text, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
 
         print(f"Failed to fetch details with status code {response.status_code} from URL: {url}")
     except Exception as e:
@@ -98,7 +98,7 @@ def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_e
 
     return index, False, None
 
-def parseCourse(html_content: str, client: httpx.Client | None = None, progress_tracker=None) -> CourseType | None:
+def parseCourse(html_content: str, client: httpx.Client | None = None, cancel_event: Event | None = None, progress_tracker=None) -> CourseType | None:
     soup = BeautifulSoup(html_content, 'html.parser')
     header = soup.find("h1")
     if not header:
@@ -106,8 +106,12 @@ def parseCourse(html_content: str, client: httpx.Client | None = None, progress_
         return None
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
-    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, progress_tracker=progress_tracker)
+    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
     staff = [s.strip() for s in re.split(r"[,;]", values["staff"]) if s.strip()]
+
+    # Free BeautifulSoup tree and raw HTML after extracting all data
+    del soup
+    del html_content
 
     if progress_tracker is not None:
         progress_tracker.increment("courses")
@@ -158,7 +162,7 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
 
     return values
 
-def extract_events(content: Tag | None, course_name: str, client: httpx.Client | None = None, progress_tracker=None) -> list[EventType]:
+def extract_events(content: Tag | None, course_name: str, client: httpx.Client | None = None, cancel_event: Event | None = None, progress_tracker=None) -> list[EventType]:
     if content is None:
         print(f"No events content found for course: {course_name}")
         return []
@@ -181,7 +185,7 @@ def extract_events(content: Tag | None, course_name: str, client: httpx.Client |
         room_url = cells[4].find("a", attrs={"name": "appointmentRooms"})
         room = None
         if room_url:
-            room = fetch_and_parse_room_details(room_url["href"], room_text, client or httpx.Client(), None, progress_tracker=progress_tracker)[2]  # type: ignore
+            room = fetch_and_parse_room_details(room_url["href"], room_text, client or httpx.Client(), cancel_event, progress_tracker=progress_tracker)[2]  # type: ignore
         else:
             room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="")) if room_text else None
         staff = [s.strip() for s in re.split(r"[,;]", staff_raw) if s.strip()]
