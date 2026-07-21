@@ -76,15 +76,6 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                     idx, parsed = future.result()
                     if parsed is not None:
                         parsed_by_index[idx] = parsed
-                        try:
-                            from database.database import insert_module_graph
-                        except ModuleNotFoundError:
-                            from src.database.database import insert_module_graph
-                        try:
-                            insert_module_graph(parsed)
-                        except Exception as e:
-                            print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
-                            raise
 
                 # Render progress after each batch of completed modules
                 if progress_tracker is not None:
@@ -95,7 +86,26 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                     future.cancel()
                 executor.shutdown(wait=False, cancel_futures=True)
 
-    modules = [parsed_by_index[idx] for idx in sorted(parsed_by_index.keys())]
+    # Collect modules in order, then insert into database serially
+    # This decouples network I/O (thread pool) from database I/O (serial),
+    # and frees memory as we go by deleting each module after insertion.
+    modules = []
+    for idx in sorted(parsed_by_index.keys()):
+        parsed = parsed_by_index[idx]
+        if parsed is None:
+            continue
+        try:
+            from database.database import insert_module_graph
+        except ModuleNotFoundError:
+            from src.database.database import insert_module_graph
+        try:
+            insert_module_graph(parsed)
+        except Exception as e:
+            print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
+            raise
+        modules.append(parsed)
+        # Free the parsed module data immediately after DB insert
+        del parsed_by_index[idx]
 
     if _cancelled(cancel_event):
         print(f"Saved {len(modules)} parsed modules before interruption.")

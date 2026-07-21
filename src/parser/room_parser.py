@@ -1,16 +1,15 @@
 import re
-from threading import Event
+from collections import OrderedDict
+from threading import Event, Lock
 
 from bs4 import BeautifulSoup, Tag
 import httpx
 
-from src.parser.utils import _cancelled
-
 try:
-    from .utils import _WHITESPACE_RE
+    from .utils import _WHITESPACE_RE, _cancelled
     from .types import RoomType, BuildingType
 except ModuleNotFoundError:
-    from src.parser.utils import _WHITESPACE_RE
+    from src.parser.utils import _WHITESPACE_RE, _cancelled
     from src.parser.types import RoomType, BuildingType
 
 # German label -> dict key for room-level fields
@@ -31,22 +30,47 @@ _BUILDING_LABEL_MAP: dict[str, str] = {
     "Adresse": "address",
 }
 
-cached_rooms: dict[str, RoomType | None] = {}
+# Thread-safe LRU cache for room details to prevent unbounded memory growth.
+# Uses OrderedDict for O(1) move-to-end operations.
+_MAX_CACHED_ROOMS = 2000
+cached_rooms: OrderedDict[str, RoomType | None] = OrderedDict()
+_cached_rooms_lock = Lock()
+
+def _cache_get(key: str) -> RoomType | None | None:
+    """Thread-safe lookup in the LRU room cache. Returns the cached value or None."""
+    with _cached_rooms_lock:
+        if key in cached_rooms:
+            # Move to end (most recently used)
+            cached_rooms.move_to_end(key)
+            return cached_rooms[key]
+        return None
+
+def _cache_put(key: str, value: RoomType | None) -> None:
+    """Thread-safe insert into the LRU room cache, evicting oldest if at capacity."""
+    with _cached_rooms_lock:
+        if key in cached_rooms:
+            cached_rooms.move_to_end(key)
+            cached_rooms[key] = value
+        else:
+            if len(cached_rooms) >= _MAX_CACHED_ROOMS:
+                cached_rooms.popitem(last=False)
+            cached_rooms[key] = value
 
 def fetch_and_parse_room_details(url: str, room_text: str, client: httpx.Client, cancel_event: Event, progress_tracker=None) -> tuple[int, bool, RoomType | None]:
     if _cancelled(cancel_event):
         return (0, True, None)
 
     try:
-        if room_text in cached_rooms:
-            return (0, False, cached_rooms[room_text])
+        cached = _cache_get(room_text)
+        if cached is not None:
+            return (0, False, cached)
         if not url.startswith("http"):
             url = "https://almaweb.uni-leipzig.de" + url
 
         response = client.get(url)
         response.raise_for_status()
         room = parseRoom(response.text)
-        cached_rooms[room_text] = room
+        _cache_put(room_text, room)
 
         if progress_tracker is not None:
             progress_tracker.increment("rooms")
