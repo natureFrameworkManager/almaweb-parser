@@ -23,6 +23,7 @@ COOKIES_ENABLED = False
 # Respect HTTP caching
 HTTPCACHE_ENABLED = True
 HTTPCACHE_DIR = "httpcache"
+HTTPCACHE_EXPIRATION_SECS = 60 * 60 * 24 # 1 day
 
 # Logging
 LOG_LEVEL = "INFO"
