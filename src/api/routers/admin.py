@@ -18,6 +18,10 @@ from .shared import SessionDep, PROBLEM_RESPONSES
 from schemas import StatsResponse, SyncRunRead
 from database.database import engine
 from database.model import Building, Course, Degree, Event, EventType, Faculty, Location, Module, ModuleExam, Semester, Staff, Status, CourseEventLink, CourseStaffLink, EventStaffLink, ModuleCourseLink, ModuleDegreeLink, ModuleSemesterLink, ModuleStaffLink, ModuleExamStaffLink, SyncRun
+try:
+    from parser.degree_parser import sync_module_degrees
+except ModuleNotFoundError:
+    from src.parser.degree_parser import sync_module_degrees  # type: ignore
 
 router = APIRouter(prefix="/admin", tags=["Admin"], responses=PROBLEM_RESPONSES)
 
@@ -146,6 +150,18 @@ def get_stats(
         }
     }
     return counts
+
+
+@router.post("/sync-degrees", summary="Derive degrees from module paths")
+def sync_degrees_endpoint(prune: bool = False) -> dict[str, int]:
+    """Run the streaming degree second pass over all stored module paths.
+
+    Extracts the Studiengang/Degree from each module's navigation path, harmonizes the
+    spellings over the full dataset and links the resulting degrees to the modules.
+    Runs in FastAPI's threadpool (sync endpoint), so it does not block the event loop.
+    """
+    with Session(engine) as session:
+        return sync_module_degrees(session, prune=prune)
 
 
 @router.get("/sync", summary="List ingestion runs", response_model=list[SyncRunRead])

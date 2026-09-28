@@ -204,10 +204,21 @@ class Building(SQLModel, table=True):
 class Degree(SQLModel, table=True):
     """
     A degree program, e.g. "Informatik (Bachelor of Science)", "Informatik (Master of Science)", etc.
+
+    The ``name`` is the harmonized display name produced by the path-parser
+    (``subject (degree, school_type, ects LP, version)``) and acts as the dedup identity
+    together with ``faculty_id``. The remaining columns preserve the structured fields the
+    extractor derived from the navigation path.
     """
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = ""
+    subject: str = "" # The subject/program name without degree, school type, version or ECTS
+    degree: str = "" # "B.A.", "B.Sc.", "M.A.", "M.Sc.", "Bachelor", "Master", "Lehramt", "Staatsexamen", "Diplom", "Wahlfach"
+    school_type: str = "" # Only for teaching degrees: "Grundschule", "Oberschule", "Gymnasium", "Sonderpädagogik", "Berufsbildende Schulen"
+    ects: int | None = None # ECTS from the name, e.g. 60 for "Wahlfach 60 LP"
+    version: str = "" # Prüfungsordnung / Immatrikulationsangabe, e.g. "PO 2017", "ab WiSe 2024/25"
+    confidence: str = "" # Extractor confidence: "high", "medium", "low", "none"
     faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="degrees")

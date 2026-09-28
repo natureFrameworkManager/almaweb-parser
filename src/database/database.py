@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine, select
-from sqlalchemy import null
+from sqlalchemy import null, text
 
 try:
     from parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
@@ -16,13 +16,13 @@ except ModuleNotFoundError:
     from src.parser.utils import _is_multidimensional
 
 try:
-    from .model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, 
+    from .model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, Degree,
                         ModuleStaffLink, CourseStaffLink, EventStaffLink,
-                        ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink)
+                        ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink, ModuleDegreeLink)
 except ModuleNotFoundError:
-    from src.database.model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, 
+    from src.database.model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, Degree,
                                     ModuleStaffLink, CourseStaffLink, EventStaffLink,
-                                    ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink)
+                                    ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink, ModuleDegreeLink)
 DATABASE_URL = "sqlite:///database.db"
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -31,8 +31,37 @@ engine = create_engine(DATABASE_URL, echo=False)
 def create_db_and_tables():
     """
     Create all database tables defined in the SQLModel metadata, if they do not already exist.
+
+    Also applies the lightweight ``degree`` column migration so that databases created
+    before the path-parser integration keep working (``create_all`` never alters existing tables).
     """
     SQLModel.metadata.create_all(engine)
+    _migrate_degree_columns()
+
+
+def _migrate_degree_columns():
+    """
+    Add the structured degree columns to an existing ``degree`` table if they are missing.
+
+    SQLModel.metadata.create_all() only creates missing tables; it never alters an existing one.
+    Databases created before the path-parser integration therefore lack the new columns, so we
+    add them here via SQLite ``ALTER TABLE ADD COLUMN``. New databases already have them.
+    """
+    new_columns = {
+        "subject": "VARCHAR DEFAULT ''",
+        "degree": "VARCHAR DEFAULT ''",
+        "school_type": "VARCHAR DEFAULT ''",
+        "ects": "INTEGER",
+        "version": "VARCHAR DEFAULT ''",
+        "confidence": "VARCHAR DEFAULT ''",
+    }
+    with engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text("PRAGMA table_info(degree)"))}
+        if not existing:
+            return  # table does not exist yet; create_all() created it with all columns
+        for name, ddl in new_columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE degree ADD COLUMN {name} {ddl}"))
 
 
 def get_session():
@@ -217,6 +246,56 @@ def _find_faculty_by_prefix(session: Session, prefix: int) -> Faculty | None:
     """
     faculty = session.exec(select(Faculty).where(Faculty.prefix == prefix)).first()
     return faculty
+
+def _get_or_insert_degree(session: Session, degree_data: dict) -> int:
+    """
+    Look up a degree by its harmonized name and faculty. If it does not exist, insert it.
+
+    ``degree_data`` carries the structured fields produced by the path-parser
+    (``name``, ``subject``, ``degree``, ``school_type``, ``ects``, ``version``, ``confidence``,
+    ``faculty_id``). Returns the degree ID.
+    """
+    name = degree_data.get("name") or ""
+    faculty_id = degree_data.get("faculty_id")
+    degree = session.exec(
+        select(Degree)
+        .where(Degree.name == name)
+        .where(Degree.faculty_id == faculty_id)
+    ).first()
+    if degree is not None:
+        if degree.id is None:
+            raise RuntimeError("Degree to add to database has no id")
+        return degree.id
+
+    degree = Degree(
+        name=name,
+        subject=degree_data.get("subject") or "",
+        degree=degree_data.get("degree") or "",
+        school_type=degree_data.get("school_type") or "",
+        ects=degree_data.get("ects"),
+        version=degree_data.get("version") or "",
+        confidence=degree_data.get("confidence") or "",
+        faculty_id=faculty_id,
+    )  # type: ignore
+    session.add(degree)
+    session.flush()
+    if degree.id is None:
+        raise RuntimeError("Could not get degree id after add and flush to database")
+    return degree.id
+
+def _link_module_degree(session: Session, module_id: int, degree_id: int):
+    """
+    Create a link between a module and a degree in the ModuleDegreeLink association table, if it does not already exist.
+    """
+    link = session.exec(
+        select(ModuleDegreeLink)
+        .where(ModuleDegreeLink.module_id == module_id)
+        .where(ModuleDegreeLink.degree_id == degree_id)
+    ).first()
+    if link is not None:
+        return
+    session.add(ModuleDegreeLink(module_id=module_id, degree_id=degree_id))
+    session.flush()
 
 def _link_module_course(session: Session, module_id: int, course_id: int):
     """

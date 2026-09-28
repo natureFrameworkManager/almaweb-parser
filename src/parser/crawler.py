@@ -37,6 +37,10 @@ class ModuleLink():
         return f"{self.name} (Path: {' > '.join(self.path)})"
 
 from .module_parser import handleModuleList
+try:
+    from .degree_parser import sync_module_degrees
+except (ImportError, ModuleNotFoundError):
+    from src.parser.degree_parser import sync_module_degrees
 class LectureSpider(scrapy.Spider):
     name = "lecture_spider"
     start_urls = [
@@ -54,6 +58,8 @@ class LectureSpider(scrapy.Spider):
         create_db_and_tables()
         # Enable progress output via: scrapy crawl lecture_spider -a progress=1
         self.progress_tracker = ProgressTracker(enabled=bool(getattr(self, "progress", False)))
+        # Run the degree extraction second pass after parsing via: scrapy crawl lecture_spider -a sync_degrees=1
+        self.sync_degrees = bool(getattr(self, "sync_degrees", False))
         if self.progress_tracker.enabled:
             self.progress_tracker.add_phase("semesters", 0)
             self.progress_tracker.add_phase("faculties", 0)
@@ -200,6 +206,13 @@ class LectureSpider(scrapy.Spider):
                 cancel_event=cancel_event,
                 progress_tracker=self.progress_tracker if self.progress_tracker.enabled else None,
             )
+
+            # Second pass: derive degrees/linkings from the (already stored) module paths.
+            if self.sync_degrees:
+                print("Deriving degrees from module paths...")
+                with Session(engine) as degree_session:
+                    degree_stats = sync_module_degrees(degree_session, progress=print)
+                print(f"Degree sync finished: {degree_stats}")
 
             if self.progress_tracker.enabled:
                 self.progress_tracker.finish()

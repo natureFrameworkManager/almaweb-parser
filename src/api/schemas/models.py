@@ -117,11 +117,17 @@ class DegreeRead(ReadSchema):
 
     model_config = ConfigDict(
         from_attributes=True,
-        json_schema_extra={"examples": [{"id": 1, "name": "Informatik (Bachelor of Science)", "faculty_id": 1}]},
+        json_schema_extra={"examples": [{"id": 1, "name": "Informatik (Bachelor of Science)", "subject": "Informatik", "degree": "B.Sc.", "school_type": None, "ects": None, "version": "", "confidence": "high", "faculty_id": 1}]},
     )
 
     id: int | None = None
     name: str | None = None
+    subject: str | None = None
+    degree: str | None = None
+    school_type: str | None = None
+    ects: int | None = None
+    version: str | None = None
+    confidence: str | None = None
     faculty_id: int | None = None
     # Relationships (populated via ?include=)
     faculty: FacultyRead | None = None

@@ -26,6 +26,16 @@ The crawler walks the full module tree, parses each module and its courses (incl
    scrapy crawl lecture_spider -a progress_bar=1
    ```
    This takes roughly 10 minutes. The crawler walks every page of the module tree, fetches up to 4 module pages and 8 course pages concurrently, and writes results to `database.db` as it goes. Progress is saved incrementally - interrupt with `Ctrl+C` and the modules parsed so far are kept.
+
+   Degrees are derived separately from the stored module paths (extraction + harmonization over the full dataset) by a streaming second pass. Run it after the crawl, or automatically with the crawler:
+
+   ```bash
+   python -m src.parser.degree_parser        # batch-wise, bounded memory; add --prune to drop orphan degrees
+   ```
+   ```bash
+   # Derive degrees at the end of the crawl:
+   scrapy crawl lecture_spider -a sync_degrees=1
+   ```
 5. Start the API server:
    ```bash
    fastapi dev src/api/main.py
@@ -86,7 +96,7 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 - [x] Expose a room/location schedule endpoint (all events in a given room on a given day)
 
 ### Data Model
-- [ ] Parse degree and semester information from the path or other sources
+- [x] Parse degree information from the path (via the `path_parser` second pass; semester info handled via `start_semester`)
 - [ ] Optimize event storage (57k+ entries per semester)
 
 ### Infrastructure

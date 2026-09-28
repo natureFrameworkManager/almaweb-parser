@@ -20,6 +20,8 @@ def get_degrees(
     export: Annotated[dict, Depends(export_parameters)],
     ids: list[int] | None = Query(None, description="Degree ID values (repeatable; OR within this filter)."),
     names: list[str] | None = Query(None, description="Degree name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    subjects: list[str] | None = Query(None, description="Subject values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    degrees: list[str] | None = Query(None, description="Degree type values, e.g. B.Sc., M.A. (repeatable; case-insensitive, partial match; OR within this filter)."),
     faculty: list[int] | None = Query(None, description="Faculty ID values (repeatable; OR within this filter)."),
     modules: list[int] | None = Query(None, description="Module ID values to filter degrees that include these modules (repeatable; OR within this filter)."),
 ):
@@ -29,6 +31,10 @@ def get_degrees(
         query = query.where(or_(*[Degree.id == value for value in ids])) # type: ignore
     if names:
         query = query.where(or_(*[Degree.name.ilike(f"%{value}%") for value in names])) # type: ignore
+    if subjects:
+        query = query.where(or_(*[Degree.subject.ilike(f"%{value}%") for value in subjects])) # type: ignore
+    if degrees:
+        query = query.where(or_(*[Degree.degree.ilike(f"%{value}%") for value in degrees])) # type: ignore
     if faculty:
         query = query.where(or_(*[Degree.faculty_id == value for value in faculty])) # type: ignore
     if modules:
