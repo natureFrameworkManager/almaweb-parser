@@ -41,7 +41,7 @@ _run_subscribers_lock = threading.Lock()
 def _run_crawl(run_id: int) -> None:
     """Launch ``scrapy crawl lecture_spider`` and persist the results to the DB."""
     process = subprocess.Popen(
-        [sys.executable, "-m", "scrapy", "crawl", "lecture_spider"],
+        [sys.executable, "-m", "scrapy", "crawl", "lecture_spider", "-a", "sync_degrees=1"],
         cwd=_PROJECT_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

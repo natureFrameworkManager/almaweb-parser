@@ -18,9 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends cron gosu && \
 RUN mkdir -p /data && \
     ln -sf /data/database.db /code/database.db
 
-# Daily cron job: re-run scrapy spider at 02:00
+# Daily cron job: re-run scrapy spider at 02:00, then derive degrees from the paths
 RUN echo 'SHELL=/bin/bash' > /etc/cron.d/almaweb-parse && \
-    echo '0 2 * * * appuser cd /code && /usr/local/bin/scrapy crawl lecture_spider >> /var/log/almaweb-cron.log 2>&1' \
+    echo '0 2 * * * appuser cd /code && /usr/local/bin/scrapy crawl lecture_spider -a sync_degrees=1 >> /var/log/almaweb-cron.log 2>&1' \
     >> /etc/cron.d/almaweb-parse && \
     chmod 0644 /etc/cron.d/almaweb-parse
 
