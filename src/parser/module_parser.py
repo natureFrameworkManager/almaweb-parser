@@ -10,11 +10,11 @@ from bs4 import BeautifulSoup, Tag
 from src.parser.types import CourseType, EventType, ExamType, RoomType
 
 try:
-    from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time
+    from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
     from .utils import _WHITESPACE_RE, _cancelled
     from .types import ModuleType
 except ModuleNotFoundError:
-    from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time
+    from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
     from src.parser.utils import _WHITESPACE_RE, _cancelled
     from src.parser.types import ModuleType
 
@@ -337,21 +337,39 @@ def extract_exams(content: Tag | None, course_name: str, progress_tracker=None) 
 
     exams = []
     for event_row in content.select("table tbody tr"):
-        cells = [
-            span for span in event_row.select("td span")
-            if "lg:hidden" not in (span.get("class") or [])
-        ]
-        if len(cells) < 4:
+        cells = event_row.find_all("td", recursive=False)
+        if not cells:
             continue
-        name, datetime_str, staff_raw, required_raw = [
-            cell.get_text(" ", strip=True) for cell in cells[:4]
-        ]
+
+        # Identify columns by their AlmaWeb class names instead of by position.
+        # The leading "Leistungskombination" cell uses a rowspan and therefore
+        # only exists in the first row of each exam group; positional indexing
+        # shifted every following column (dates/time ranges ended up as staff).
+        by_class: dict[str, Tag] = {}
+        for cell in cells:
+            for class_name in (cell.get("class") or []):
+                by_class.setdefault(class_name, cell)
+        name_cell = by_class.get("rw-detail-exam")
+        date_cell = by_class.get("rw-detail-date")
+        staff_cell = by_class.get("rw-detail-instructors")
+        required_cell = by_class.get("rw-detail-compulsory")
+
+        # Fall back to positional columns for older AlmaWeb markup that does not
+        # expose the semantic class attributes.
+        if name_cell is None or date_cell is None or staff_cell is None or required_cell is None:
+            if len(cells) < 4:
+                continue
+            name_cell, date_cell, staff_cell, required_cell = cells[:4]
+
         # Remove any leading/trailing whitespace from the name
         # Also remove multiple spaces and newlines from the name
-        name = name.strip()
+        name = _cell_value(name_cell).strip()
         name = re.sub(r'\s+', ' ', name)
+        datetime_str = _cell_value(date_cell)
+        staff_raw = _cell_value(staff_cell, separator=", ")
+        required_raw = _cell_value(required_cell)
         date_str, start_time, end_time = ("", "", "") if datetime_str == "k.Terminbuchung" else parse_exam_datetime(datetime_str)
-        staff = [s.strip() for s in re.split(r"[,;]", staff_raw) if s.strip()]
+        staff = _clean_staff(staff_raw)
         required = required_raw == "Ja"
 
         if progress_tracker is not None:

@@ -33,6 +33,70 @@ _COURSE_LABEL_MAP: dict[str, tuple[str, str]] = {
     "Unterrichtssprache":    ("language",     "span"),
 }
 
+# CampusNet renders every table cell as a flex container holding a mobile-only
+# label span (hidden on large screens via ``lg:hidden``) followed by the actual
+# value span(s). Filtering all ``span`` elements of a row and indexing them by
+# position is fragile: a single cell may contain zero, one or several value
+# spans (e.g. multiple rooms or several instructors), which shifts every
+# following column. Reading the value per cell keeps columns aligned.
+_MOBILE_LABEL_CLASS = "lg:hidden"
+
+# Values that look like a time (optionally a range) or a bare date and can never
+# be a person. These showed up as staff when table columns were misaligned.
+_TIME_ONLY_RE = re.compile(r"^\d{1,2}:\d{2}(?:\s*[-–]\s*\d{1,2}:\d{2})?$")
+_DATE_ONLY_RE = re.compile(
+    r"^(?:[A-Za-zÄÖÜäöü]{2},?\s*)?\d{1,2}\.\s*[A-Za-zÄÖÜäöü]{3}\.?\s*\d{2,4}$"
+)
+_NON_STAFF_LABELS = {"k.Terminbuchung", "ohne Termin"}
+
+
+def _cell_values(cell: Tag) -> list[str]:
+    """Return the value texts of a table cell, one entry per outermost value span."""
+    spans = [
+        span for span in cell.find_all("span")
+        if _MOBILE_LABEL_CLASS not in (span.get("class") or [])
+    ]
+    # Only keep the outermost value spans so nested styling spans are not counted twice.
+    outermost = [
+        span for span in spans
+        if not any(other is not span and other in span.parents for other in spans)
+    ]
+    source = outermost or spans
+    if source:
+        return [span.get_text(" ", strip=True) for span in source]
+    text = cell.get_text(" ", strip=True)
+    return [text] if text else []
+
+
+def _cell_value(cell: Tag, separator: str = " ") -> str:
+    """Return the whitespace-normalised value text of a table cell.
+
+    The mobile-only label span is ignored. If a cell holds several value spans
+    (for example multiple rooms or instructors) their texts are joined with
+    ``separator``.
+    """
+    return _WHITESPACE_RE.sub(" ", separator.join(_cell_values(cell))).strip()
+
+
+def _clean_staff(raw: str) -> list[str]:
+    """Split a raw staff string and drop entries that are not names.
+
+    Guards against time ranges/dates/placeholders that leak into the staff
+    column when the source table columns are misaligned.
+    """
+    staff: list[str] = []
+    for entry in re.split(r"[,;]", raw):
+        entry = _WHITESPACE_RE.sub(" ", entry).strip()
+        if not entry:
+            continue
+        if entry in _NON_STAFF_LABELS:
+            continue
+        if _TIME_ONLY_RE.match(entry) or _DATE_ONLY_RE.match(entry):
+            continue
+        if entry not in staff:
+            staff.append(entry)
+    return staff
+
 def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None, progress_tracker=None) -> list[CourseType | None]:
     if not urls:
         return []
@@ -107,7 +171,7 @@ def parseCourse(html_content: str, client: httpx.Client | None = None, cancel_ev
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
     events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
-    staff = [s.strip() for s in re.split(r"[,;]", values["staff"]) if s.strip()]
+    staff = _clean_staff(values["staff"])
 
     # Free BeautifulSoup tree and raw HTML after extracting all data
     del soup
@@ -173,22 +237,45 @@ def extract_events(content: Tag | None, course_name: str, client: httpx.Client |
 
     events = []
     for event_row in content.select("table tbody tr"):
-        cells = [
-            span for span in event_row.select("td span")
-            if "lg:hidden" not in (span.get("class") or [])
-        ]
-        if len(cells) < 6:
+        cells = event_row.find_all("td", recursive=False)
+        if not cells:
             continue
-        number, date_raw, start_raw, end_raw, room_text, staff_raw = [
-            cell.get_text(" ", strip=True) for cell in cells[:6]
-        ]
-        room_url = cells[4].find("a", attrs={"name": "appointmentRooms"})
+
+        by_name = {cell.get("name"): cell for cell in cells if cell.get("name")}
+        number_cell = cells[0]
+        date_cell = by_name.get("appointmentDate")
+        start_cell = by_name.get("appointmentTimeFrom")
+        end_cell = by_name.get("appointmentDateTo")
+        staff_cell = by_name.get("appointmentInstructors")
+        room_cell = next(
+            (cell for cell in cells if "rw-course-room" in (cell.get("class") or [])),
+            None,
+        )
+
+        # Fall back to positional columns for older AlmaWeb markup that does not
+        # expose the semantic ``name``/class attributes.
+        if date_cell is None or start_cell is None or end_cell is None or staff_cell is None:
+            if len(cells) < 6:
+                continue
+            number_cell, date_cell, start_cell, end_cell, room_cell, staff_cell = cells[:6]
+
+        number = _cell_value(number_cell)
+        date_raw = _cell_value(date_cell)
+        start_raw = _cell_value(start_cell)
+        end_raw = _cell_value(end_cell)
+        # A room cell may list several rooms; use the first one for the fallback
+        # name / room cache key while the anchor resolves the actual details.
+        room_values = _cell_values(room_cell) if room_cell is not None else []
+        room_text = _WHITESPACE_RE.sub(" ", room_values[0]).strip() if room_values else ""
+        staff_raw = _cell_value(staff_cell, separator=", ")
+
+        room_url = room_cell.find("a", attrs={"name": "appointmentRooms"}) if room_cell is not None else None
         room = None
         if room_url:
             room = fetch_and_parse_room_details(room_url["href"], room_text, client or httpx.Client(), cancel_event, progress_tracker=progress_tracker)[2]  # type: ignore
         else:
             room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="")) if room_text else None
-        staff = [s.strip() for s in re.split(r"[,;]", staff_raw) if s.strip()]
+        staff = _clean_staff(staff_raw)
 
         if progress_tracker is not None:
             progress_tracker.increment("events")
