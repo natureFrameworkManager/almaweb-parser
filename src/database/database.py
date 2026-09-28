@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine, select
-from sqlalchemy import null, text
+from sqlalchemy import event, null, text
 
 try:
     from parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
@@ -25,18 +25,49 @@ except ModuleNotFoundError:
                                     ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink, ModuleDegreeLink)
 DATABASE_URL = "sqlite:///database.db"
 
-engine = create_engine(DATABASE_URL, echo=False)
+# SQLite is accessed from FastAPI's synchronous thread pool, so connections are shared across
+# threads. ``check_same_thread=False`` allows that; the generous ``timeout`` lets readers wait
+# for a writer instead of immediately raising "database is locked". The pool is intentionally
+# larger than the SQLAlchemy default (5 + 10 overflow) so a burst of concurrent requests does
+# not exhaust it while a slow query is still running.
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+)
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite(dbapi_connection, connection_record):
+    """
+    Tune each new SQLite connection.
+
+    WAL journaling lets reads proceed while the parser is writing, ``busy_timeout`` makes
+    lock contention wait instead of erroring, and ``synchronous=NORMAL`` is the recommended
+    durability level for WAL mode.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+    finally:
+        cursor.close()
 
 
 def create_db_and_tables():
     """
     Create all database tables defined in the SQLModel metadata, if they do not already exist.
 
-    Also applies the lightweight ``degree`` column migration so that databases created
-    before the path-parser integration keep working (``create_all`` never alters existing tables).
+    Also applies the lightweight ``degree`` column and index migrations so that databases
+    created before those changes keep working (``create_all`` never alters existing tables).
     """
     SQLModel.metadata.create_all(engine)
     _migrate_degree_columns()
+    _migrate_indexes()
 
 
 def _migrate_degree_columns():
@@ -62,6 +93,58 @@ def _migrate_degree_columns():
         for name, ddl in new_columns.items():
             if name not in existing:
                 connection.execute(text(f"ALTER TABLE degree ADD COLUMN {name} {ddl}"))
+
+
+# Indexes introduced after the initial schema. ``SQLModel.metadata.create_all()`` only creates
+# missing tables and never adds indexes to existing ones, so any missing index is created here
+# explicitly. These keep the reverse (``b -> a``) lookups used by ``<Model>.any(...)`` filters
+# and relationship loads from degrading into full table scans.
+_PERFORMANCE_INDEXES: dict[str, list[str]] = {
+    "modulestafflink": ["staff_id"],
+    "modulesemesterlink": ["semester_id"],
+    "modulestartsemesterlink": ["semester_id"],
+    "modulecourselink": ["course_id"],
+    "moduledegreelink": ["degree_id"],
+    "courseeventlink": ["event_id"],
+    "coursestafflink": ["staff_id"],
+    "coursesemesterlink": ["semester_id"],
+    "eventstafflink": ["staff_id"],
+    "eventsemesterlink": ["semester_id"],
+    "moduleexamstafflink": ["staff_id"],
+    "moduleexamsemesterlink": ["semester_id"],
+    "event": ["event_date", "location_id"],
+    "moduleexam": ["module_id"],
+    "location": ["building_id"],
+    "module": ["faculty_id"],
+    "degree": ["faculty_id"],
+}
+
+
+def _migrate_indexes():
+    """
+    Create the performance indexes on an existing database if they are missing.
+
+    New databases get them automatically from ``create_all()``; this only backfills databases
+    that were created before the indexes were declared on the models.
+    """
+    with engine.begin() as connection:
+        existing_tables = {
+            row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+        }
+        for table, columns in _PERFORMANCE_INDEXES.items():
+            if table not in existing_tables:
+                continue
+            existing_indexes = {
+                row[1] for row in connection.execute(text(f"PRAGMA index_list({table})"))
+            }
+            for column in columns:
+                index_name = f"ix_{table}_{column}"
+                if index_name in existing_indexes:
+                    continue
+                connection.execute(
+                    text(f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table}" ("{column}")')
+                )
+
 
 
 def get_session():

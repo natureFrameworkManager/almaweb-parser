@@ -3,13 +3,21 @@ from datetime import datetime, time, date, timezone
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
+# NOTE on association-table indexes:
+# Every link table below uses a composite primary key ``(a_id, b_id)`` which SQLite backs
+# with an automatic index whose leading column is ``a_id``. Reverse lookups – i.e. the
+# ``b -> a`` direction used by ``<Model>.any(...)`` filters and relationship loads – cannot
+# use that autoindex and previously fell back to a full table scan. Combined with a
+# correlated ``EXISTS`` that is evaluated once per outer row this produced O(N*M) plans and
+# request timeouts (see ``ix_courseeventlink_event_id``). The second column of each link
+# table therefore carries an explicit ``index=True``.
 class ModuleStaffLink(SQLModel, table=True):
     """
     Association table for the many-to-many relationship between Module and Staff.
     """
 
     module_id: int = Field(foreign_key="module.id", primary_key=True)
-    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True, index=True)
 
 class ModuleSemesterLink(SQLModel, table=True):
     """
@@ -17,7 +25,7 @@ class ModuleSemesterLink(SQLModel, table=True):
     """
 
     module_id: int = Field(foreign_key="module.id", primary_key=True)
-    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True, index=True)
 
 class ModuleStartSemesterLink(SQLModel, table=True):
     """
@@ -25,7 +33,7 @@ class ModuleStartSemesterLink(SQLModel, table=True):
     """
 
     module_id: int = Field(foreign_key="module.id", primary_key=True)
-    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True, index=True)
 
 class ModuleCourseLink(SQLModel, table=True):
     """
@@ -33,7 +41,7 @@ class ModuleCourseLink(SQLModel, table=True):
     """
 
     module_id: int = Field(foreign_key="module.id", primary_key=True)
-    course_id: int = Field(foreign_key="course.id", primary_key=True)
+    course_id: int = Field(foreign_key="course.id", primary_key=True, index=True)
 
 class ModuleDegreeLink(SQLModel, table=True):
     """
@@ -41,7 +49,7 @@ class ModuleDegreeLink(SQLModel, table=True):
     """
 
     module_id: int = Field(foreign_key="module.id", primary_key=True)
-    degree_id: int = Field(foreign_key="degree.id", primary_key=True)
+    degree_id: int = Field(foreign_key="degree.id", primary_key=True, index=True)
 
 class CourseEventLink(SQLModel, table=True):
     """
@@ -49,7 +57,7 @@ class CourseEventLink(SQLModel, table=True):
     """
 
     course_id: int = Field(foreign_key="course.id", primary_key=True)
-    event_id: int = Field(foreign_key="event.id", primary_key=True)
+    event_id: int = Field(foreign_key="event.id", primary_key=True, index=True)
 
 class CourseStaffLink(SQLModel, table=True):
     """
@@ -57,7 +65,7 @@ class CourseStaffLink(SQLModel, table=True):
     """
 
     course_id: int = Field(foreign_key="course.id", primary_key=True)
-    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True, index=True)
 
 class CourseSemesterLink(SQLModel, table=True):
     """
@@ -65,7 +73,7 @@ class CourseSemesterLink(SQLModel, table=True):
     """
 
     course_id: int = Field(foreign_key="course.id", primary_key=True)
-    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True, index=True)
 
 class EventStaffLink(SQLModel, table=True):
     """
@@ -73,7 +81,7 @@ class EventStaffLink(SQLModel, table=True):
     """
 
     event_id: int = Field(foreign_key="event.id", primary_key=True)
-    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True, index=True)
 
 class EventSemesterLink(SQLModel, table=True):
     """
@@ -81,7 +89,7 @@ class EventSemesterLink(SQLModel, table=True):
     """
 
     event_id: int = Field(foreign_key="event.id", primary_key=True)
-    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True, index=True)
 
 class ModuleExamStaffLink(SQLModel, table=True):
     """
@@ -89,7 +97,7 @@ class ModuleExamStaffLink(SQLModel, table=True):
     """
 
     module_exam_id: int = Field(foreign_key="moduleexam.id", primary_key=True)
-    staff_id: int = Field(foreign_key="staff.id", primary_key=True)
+    staff_id: int = Field(foreign_key="staff.id", primary_key=True, index=True)
 
 class ModuleExamSemesterLink(SQLModel, table=True):
     """
@@ -97,7 +105,7 @@ class ModuleExamSemesterLink(SQLModel, table=True):
     """
 
     module_exam_id: int = Field(foreign_key="moduleexam.id", primary_key=True)
-    semester_id: int = Field(foreign_key="semester.id", primary_key=True)
+    semester_id: int = Field(foreign_key="semester.id", primary_key=True, index=True)
 
 class Module(SQLModel, table=True):
     """
@@ -117,7 +125,7 @@ class Module(SQLModel, table=True):
     content: str = ""
     exam_prerequisites: str = ""
     prerequisites: dict[str, str] = Field(sa_column=Column(JSON))
-    faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the module belongs, if known
+    faculty_id: int | None = Field(foreign_key="faculty.id", index=True) # The faculty to which the module belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="modules")
     path: list[str] | list[list[str]] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
@@ -163,8 +171,8 @@ class Event(SQLModel, table=True):
     name: str = ""
     start_time: time
     end_time: time
-    event_date: date
-    location_id: int | None = Field(foreign_key="location.id") # TODO: Remove None
+    event_date: date = Field(index=True) # Indexed: date-range filters (/schedule/daily|weekly|monthly, /events) scan this column
+    location_id: int | None = Field(foreign_key="location.id", index=True) # TODO: Remove None
 
     location: "Location" = Relationship(back_populates="events")
     staff: list["Staff"] = Relationship(back_populates="events", link_model=EventStaffLink)
@@ -184,7 +192,7 @@ class Location(SQLModel, table=True):
     seats: int | None = None # The number of seats available in the location, if known
     size: float | None = None # The size of the location in square meters, if known
     accessibility: str = "" # Information about the accessibility of the location, e.g. "barrierefrei", "nicht barrierefrei", etc.
-    building_id: int | None = Field(foreign_key="building.id") # The building where the location is situated, if known
+    building_id: int | None = Field(foreign_key="building.id", index=True) # The building where the location is situated, if known
 
     building: "Building" = Relationship(back_populates="locations")
     events: list["Event"] = Relationship(back_populates="location")
@@ -219,7 +227,7 @@ class Degree(SQLModel, table=True):
     ects: int | None = None # ECTS from the name, e.g. 60 for "Wahlfach 60 LP"
     version: str = "" # Prüfungsordnung / Immatrikulationsangabe, e.g. "PO 2017", "ab WiSe 2024/25"
     confidence: str = "" # Extractor confidence: "high", "medium", "low", "none"
-    faculty_id: int | None = Field(foreign_key="faculty.id") # The faculty to which the degree program belongs, if known
+    faculty_id: int | None = Field(foreign_key="faculty.id", index=True) # The faculty to which the degree program belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="degrees")
     modules: list["Module"] = Relationship(back_populates="degrees", link_model=ModuleDegreeLink)
@@ -286,7 +294,7 @@ class ModuleExam(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    module_id: int = Field(foreign_key="module.id")
+    module_id: int = Field(foreign_key="module.id", index=True)
     name: str = ""
     exam_date: date | None = None
     start_time: time | None = None
