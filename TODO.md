@@ -4,7 +4,7 @@
 
 ## Bugs
 
-### 1. Unclosed `httpx.Client` in `extract_events`
+### ✅ 1. Unclosed `httpx.Client` in `extract_events`
 **File:** `src/parser/course_parser.py`  
 A new `httpx.Client()` is created inline per room fetch (`fetch_and_parse_room_details(room_url["href"], room_text, httpx.Client(), None)`) and never closed — resource leak per event row that has a room URL.
 
@@ -40,7 +40,7 @@ The `module_id` and `module_name`/`module_number` filters reference `Course.modu
 
 ---
 
-### 7. `Module.start_semester` filter calls `.ilike()` on a relationship
+### ✅ 7. `Module.start_semester` filter calls `.ilike()` on a relationship
 **File:** `src/api/routers/modules.py`  
 `Module.start_semester` is a `list[Semester]` relationship, not a string column. The `.ilike()` call will raise a runtime error when the `start_semester` query param is used.
 
@@ -52,7 +52,7 @@ The `module_id` and `module_name`/`module_number` filters reference `Course.modu
 
 ---
 
-### 9. `cached_rooms` module-level dict is not thread-safe
+### ✅ 9. `cached_rooms` module-level dict is not thread-safe
 **File:** `src/parser/room_parser.py`  
 `cached_rooms` is read and written from multiple threads (via `ThreadPoolExecutor`) without any lock, which can cause a `RuntimeError` on dict size change or return stale/corrupted data under concurrent access.
 
@@ -76,7 +76,7 @@ When multiple prerequisite lines contain no `":"`, every one writes to `prerequi
 
 ---
 
-### 18. `_cancelled` import in `room_parser` has no relative fallback
+### ✅ 18. `_cancelled` import in `room_parser` has no relative fallback
 **File:** `src/parser/room_parser.py`  
 `from src.parser.utils import _cancelled` is an unconditional absolute import at the top of the file. Every other symbol in the file is imported via a `try/except ModuleNotFoundError` pattern to handle both relative and absolute import contexts. `_cancelled` is missing this fallback and will fail when the module is loaded via relative imports (e.g. during the crawl).
 
@@ -90,13 +90,13 @@ When multiple prerequisite lines contain no `":"`, every one writes to `prerequi
 
 ## Missing / Incomplete Implementations
 
-### 10. Only the first semester node is ever followed
+### ✅ 10. Only the first semester node is ever followed
 **File:** `src/parser/crawler.py`  
 `for anchor in [semesterNodes[0]]:` — the list slice hard-codes a single element, so only the first matching semester is crawled. All other semesters are silently ignored.
 
 ---
 
-### 11. Crawler hard-coded to one faculty
+### ✅ 11. Crawler hard-coded to one faculty
 **File:** `src/parser/crawler.py`  
 Navigation links are only followed when the name starts with `"10 - Fakultät für Mathematik und Informatik"` (or the breadcrumb already contains it). All other faculties are discovered (`found_faculties`) but never crawled.
 

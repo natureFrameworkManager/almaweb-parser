@@ -71,11 +71,11 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 **Scrapy settings** - Throttling, caching, and other Scrapy options are in `src/settings.py`. AutoThrottle is enabled by default to avoid overloading the server.
 
 ## ToDo
-- [ ] Handle modules with multiple paths [src/parser/module_parser.py](src/parser/module_parser.py)
-- [ ] Handle rooms with only a name and the resulting empty building [src/parser/course_parser.py](src/parser/course_parser.py)
+- [x] Handle modules with multiple paths [src/parser/module_parser.py](src/parser/module_parser.py)
+- [x] Handle rooms with only a name and the resulting empty building [src/parser/course_parser.py](src/parser/course_parser.py)
 - [ ] Handle event times from 00:00 to 24:00 currently error if hour outside of 0-23 range [src/parser/course_parser.py](src/parser/course_parser.py)
-- [ ] Handle semesters across effected datatypes correctly. Modules are as a link not sufficient for the linking. [src/parser/module_parser.py](src/parser/module_parser.py)
-- [ ] Apply the semester-id filters correctly to all data types. [src/api/routers/modules.py](src/api/routers/modules.py), [src/api/routers/courses.py](src/api/routers/courses.py), [src/api/routers/events.py](src/api/routers/events.py)
+- [x] Handle semesters across effected datatypes correctly. Modules are as a link not sufficient for the linking. [src/parser/module_parser.py](src/parser/module_parser.py)
+- [x] Apply the semester-id filters correctly to all data types. [src/api/routers/modules.py](src/api/routers/modules.py), [src/api/routers/courses.py](src/api/routers/courses.py), [src/api/routers/events.py](src/api/routers/events.py)
 
 ## Future Ideas
 
