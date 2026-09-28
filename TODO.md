@@ -135,3 +135,46 @@ When `split_by_day=True`, `query.order_by(weekday_col)` is added *after* the use
 ### 22. `weekday` filter documentation inconsistency between `/events` and `/schedule/weekly`
 **File:** `src/api/routers/events.py`  
 The `weekday` parameter description on `/events` says `"0=Sunday, 1=Monday, …, 6=Saturday"`, but the conversion `(day + 1) % 7` treats `0` as Monday — the same convention used (and correctly documented) in `/schedule/weekly`. The doc string for `/events` is wrong, causing the filter to behave differently from what the API documentation states.
+
+---
+
+### 23. API supports only a single sort column (multi-level sort done client-side)
+
+**File:** `src/api/routers/shared.py` (`sort_parameters`, `sort_query`)  
+The `sort` parameter is a scalar string on every endpoint (`/modules`, `/courses`, `/events`, `/exams`, …): `sort_parameters()` exposes only `?sort=<column>&order=asc|desc`, and `sort_query()` applies exactly one `ORDER BY`. The UI offers multi-level sorting, so the client sends only the **primary** level to the backend and applies the whole sort chain itself (documented workaround, not an API fix).
+
+- `ts/api/api.ts:74` — *"The API only supports one sort column, so the client sends the primary level and applies the remaining levels itself."*
+- `ts/filters/query.ts:180` (`backendSort`) — *"The API only accepts a single sort column…"*
+- `ts/sort.ts:171` (`compareItems`) and `ts/views/collection.ts:71` (`activeSortLevels`) — same rationale.
+
+---
+
+### 24. Courses: staff is not resolved to IDs → instructor filter disabled
+
+**File:** `src/api/routers/courses.py` (`get_courses`)  
+`/courses` only exposes a **name-based** `staff` filter (`{"type":"string", "description":"…partial match"}`), while the UI filter (`#filter-instructors`) supplies staff **IDs**. The client's `getCourses` has its `staff_id` block commented out with the note `// Currently staff is not resolved to IDs -> bug API` (`ts/api/api.ts:245`), so the instructor filter is effectively disabled.
+
+- Live proof: `/courses?page_size=1` → count **3255**; `/courses?page_size=1&staff_id=7` → count **3255** (unchanged → ignored).
+
+---
+
+### 25. Exams: `building_id`, `staff_id` and `semester_id` filters are silently ignored
+
+**File:** `src/api/routers/exams.py` (`get_exams`)  
+The exam filter UI (`#filter-group-exam`) offers Gebäude (`#filter-buildings`), Prüfer (`#filter-staff`) and the global semester list, and `fetchExamPage` sends all three, but `/exams` accepts **none** of them (it only has a name-based `staff` filter). The client sends the params anyway, so there is no workaround in place — the filters are simply ineffective.
+
+- Live proof (`/exams?page_size=1` baseline = **2663**):
+  - `&building_id=1` → **2663** (ignored)
+  - `&staff_id=7` → **2663** (ignored)
+  - `&semester_id=1` → **2663** (ignored)
+  - `&required=true` → **2461** (works — so the probe is valid)
+
+---
+
+### 26. Events: `building_id` is a scalar, so multiple buildings cannot be OR-ed
+
+**File:** `src/api/routers/events.py` (`get_events`)  
+`getEvents` is typed `building?: number | number[]` and appends `building_id` repeatedly (`ts/api/api.ts:322-328`), but `/events` declares `building_id` as a single integer (`building_id: int | None`). Repeated scalar params are **last-value-wins**, not OR.
+
+- Live proof: `building_id=2` → **3880**; `building_id=1&building_id=2` → **3880** (took the last = 2); `building_id=2&building_id=1` → **5281** (took the last = 1).
+- **Latent only:** the events UI uses a single `<select>`, so it never sends more than one building. This is also inconsistent with the already-repeatable `location_ids` / `building_ids` list params on `/schedule/*`.
