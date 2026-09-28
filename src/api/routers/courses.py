@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.model import Course, Event, Module, Staff
+from database.model import Course, Event, Module, Staff, Semester
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, CourseRead, EventRead, ModuleRead, StaffRead
 
@@ -32,6 +32,7 @@ def get_courses(
     module_id: list[int] | None = Query(None, description="Module IDs the course belongs to (repeatable; direct match; OR within this filter)."),
     module_name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    semester_id: list[int] | None = Query(None, description="Semester IDs the course is offered in (repeatable; OR within this filter). Based on the course's semester links, not the module start semester."),
 ):
     """
     Retrieve a list of all courses
@@ -57,6 +58,9 @@ def get_courses(
         query = query.where(Course.weekly_hours >= weekly_hours_min)
     if weekly_hours_max is not None:
         query = query.where(Course.weekly_hours <= weekly_hours_max)
+    if semester_id:
+        # Courses offered in any of the given semesters (CourseSemesterLink).
+        query = query.where(Course.semesters.any(Semester.id.in_(semester_id)))  # type: ignore
     if module_id:
         query = query.where(Course.module_id.in_(module_id)) # type: ignore
     if module_name or module_number:

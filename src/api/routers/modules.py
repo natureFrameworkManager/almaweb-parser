@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.model import Module, Course, Event, Staff, Degree
+from database.model import Module, Course, Event, Staff, Degree, Semester
 from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead
 
@@ -60,7 +60,10 @@ def get_modules(
     if staff_id:
         query = query.where(or_(*[Module.responsible_persons.any(Staff.id == value) for value in staff_id]))  # type: ignore
     if start_semester:
-        query = query.where(or_(*[Module.start_semester.ilike(f"%{value}%") for value in start_semester])) # type: ignore
+        query = query.where(or_(*[Module.start_semester.any(Semester.name.ilike(f"%{value}%")) for value in start_semester]))  # type: ignore
+    if semester_id:
+        # Modules offered in any of the given semesters (ModuleSemesterLink), not just those that start there.
+        query = query.where(Module.semesters.any(Semester.id.in_(semester_id)))  # type: ignore
     if frequency:
         query = query.where(or_(*[Module.frequency.ilike(f"%{value}%") for value in frequency])) # type: ignore
     if goals:

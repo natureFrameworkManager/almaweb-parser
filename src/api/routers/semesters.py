@@ -60,7 +60,7 @@ def get_semester_events(
     semester_id: int,
 ):
     """Retrieve a list of events associated with a specific semester with a many-to-many relationship."""
-    query = select(Event).where(Event.courses.any(Course.modules.any(Module.start_semester.any(Semester.id == semester_id))))  # type: ignore
+    query = select(Event).where(Event.semesters.any(Semester.id == semester_id))  # type: ignore
     ical_including = _ical_augment_including(including, export)
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Event)
@@ -79,7 +79,7 @@ def get_semester_courses(
     semester_id: int,
 ):
     """Retrieve a list of courses associated with a specific semester."""
-    query = select(Course).where(Course.modules.any(Module.start_semester.any(Semester.id == semester_id)))  # type: ignore
+    query = select(Course).where(Course.semesters.any(Semester.id == semester_id))  # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)
     items = filter_query(session, query, fielding, Course, including)
@@ -96,7 +96,7 @@ def get_semester_modules(
     semester_id: int,
 ):
     """Retrieve a list of modules associated with a specific semester."""
-    query = select(Module).where(Module.start_semester.any(Semester.id == semester_id))  # type: ignore
+    query = select(Module).where(Module.semesters.any(Semester.id == semester_id))  # type: ignore
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
     items = filter_query(session, query, fielding, Module, including)

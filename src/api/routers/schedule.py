@@ -53,13 +53,9 @@ def get_weekly_schedule(
     conditions = []
 
     if semester_id is not None:
-        conditions.append(
-            Event.courses.any(  # type: ignore[union-attr]
-                Course.modules.any(  # type: ignore[union-attr]
-                    Module.start_semester.any(Semester.id == semester_id)  # type: ignore[union-attr]
-                )
-            )
-        )
+        # Restrict to events that actually occur in the given semester (EventSemesterLink),
+        # not merely to modules that start in it.
+        conditions.append(Event.semesters.any(Semester.id == semester_id))  # type: ignore[union-attr]
 
     if faculty_ids:
         conditions.append(

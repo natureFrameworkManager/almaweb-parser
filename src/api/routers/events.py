@@ -8,7 +8,7 @@ from sqlmodel import select
 from datetime import date, time, timedelta
 import re
 
-from database.model import Event, Course, Module, Staff, Location
+from database.model import Event, Course, Module, Staff, Location, Semester
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, EventRead, CourseRead, ModuleRead, StaffRead, LocationRead
 
@@ -60,6 +60,7 @@ def get_events(
     module_id: int | None = Query(None, description="ID of the module the event belongs to"),
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
+    semester_id: list[int] | None = Query(None, description="Semester IDs the event occurs in (repeatable; OR within this filter). Uses the event's semester links, not the module start semester."),
 ):
     """
     Retrieve a list of all events
@@ -114,6 +115,9 @@ def get_events(
         query = query.where(Event.courses.any(Course.modules.any(Module.name.ilike(f"%{module_name}%")))) # type: ignore
     if module_number:
         query = query.where(Event.courses.any(Course.modules.any(Module.number.ilike(f"%{module_number}%")))) # type: ignore
+    if semester_id:
+        # Events that occur in any of the given semesters (EventSemesterLink).
+        query = query.where(Event.semesters.any(Semester.id.in_(semester_id)))  # type: ignore
 
     # Fix 4: resolve filter context names for iCal title auto-detection
     ical_exports = dict(exports)
