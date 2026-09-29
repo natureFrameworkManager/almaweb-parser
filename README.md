@@ -135,9 +135,9 @@ All collection endpoints support:
 
 ### Known limitations
 
-- `/modules?language=…` — `Module.language` is never populated by the parser, so this filter currently
-  matches nothing. The parameter is kept for forward compatibility and its schema description is marked
-  `NOT IMPLEMENTED`.
+- `/modules?language=…` — `Module.language` will be **deprecated in future major releases**; it is **now populated** and is derived from the module's
+  courses at parse time, because AlmaWeb has no module-level language field. `Course.language` remains
+  the authoritative value.
 - `/exams?building_id=…` — **not available.** Exam records carry no room/building attribution in the
   source data, so `/exams` intentionally offers no `building_id` filter. Use `/events?building_id=…`
   (optionally combined with `module_id` / `course_id`) to find the rooms where the matching courses

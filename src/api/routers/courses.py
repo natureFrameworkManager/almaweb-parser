@@ -26,6 +26,7 @@ def get_courses(
     type: list[str] | None = Query(None, description="Course type values (repeatable; case-insensitive, partial match; OR within this filter), e.g. \"Vorlesung\", \"Seminar\"."),
     type_id: list[int] | None = Query(None, description="Event type IDs the course belongs to (repeatable; direct match; OR within this filter). Use when you already have type IDs instead of names."),
     language: list[str] | None = Query(None, description="Course language values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    org_unit: list[str] | None = Query(None, description="Organisational unit (Orga-Einheit) values (repeatable; case-insensitive, partial match; OR within this filter)."),
     staff: list[str] | None = Query(None, description="Course staff values (repeatable; case-insensitive, partial match; OR within this filter)."),
     staff_id: list[int] | None = Query(None, description="Staff IDs the course is taught by (repeatable; OR within this filter)."),
     has_events: bool | None = Query(None, description="Filter by whether a course has at least one event (true) or no events (false)."),
@@ -54,6 +55,8 @@ def get_courses(
         query = query.where(Course.type.in_(type_id)) # type: ignore
     if language:
         query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
+    if org_unit:
+        query = query.where(or_(*[Course.org_unit.ilike(f"%{value}%") for value in org_unit])) # type: ignore
     if staff:
         query = query.where(or_(*[Course.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff])) # type: ignore
     if staff_id:

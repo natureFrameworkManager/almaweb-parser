@@ -288,11 +288,44 @@ class CourseRead(ReadSchema):
     weekly_hours: int | None = None
     language: str | None = None
     status: int | StatusRead | None = None
+    org_unit: str | None = None
+    official_description: str | None = None
+    organisational: str | None = None
+    literature: str | None = None
     # Relationships (populated via ?include=)
     staff: list[StaffRead] | None = None
     semesters: list[SemesterRead] | None = None
     modules: list[ModuleRead] | None = None
     events: list[EventRead] | None = None
+
+
+class AchievementRead(ReadSchema):
+    """Mirrors ``database.model.ModuleAchievement`` (a "Leistungen" row).
+
+    These are the module's ``Modulabschlussleistungen`` (coursework/achievements),
+    distinct from the final exams exposed by ``ExamRead``.
+    """
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [{
+            "id": 1,
+            "name": "Portfolio (12 Wochen)",
+            "required": True,
+            "weight": 1.0,
+            "combination": "Ja",
+            "module_id": 1,
+        }]},
+    )
+
+    id: int | None = None
+    name: str | None = None
+    required: bool | None = None
+    weight: float | None = None
+    combination: str | None = None
+    module_id: int | None = None
+    # Relationships (populated via ?include=)
+    module: ModuleRead | None = None
 
 
 class ModuleRead(ReadSchema):
@@ -328,14 +361,20 @@ class ModuleRead(ReadSchema):
     content: str | None = None
     exam_prerequisites: str | None = None
     prerequisites: dict[str, str] | None = None
+    literature: str | None = None
+    elective_course_count: int | None = None
+    elective_prerequisites: str | None = None
+    elective_classification: str | None = None
+    grading_note: str | None = None
     faculty_id: int | None = None
-    path: list[str] | list[list[str]] | None = None
+    path: list[list[str]] | None = None
     # Relationships (populated via ?include=)
     faculty: FacultyRead | None = None
     responsible_persons: list[StaffRead] | None = None
     start_semester: list[SemesterRead] | None = None
     semesters: list[SemesterRead] | None = None
     exams: list[ExamRead] | None = None
+    achievements: list[AchievementRead] | None = None
     degrees: list[DegreeRead] | None = None
     courses: list[CourseRead] | None = None
 
@@ -352,5 +391,6 @@ LocationRead.model_rebuild()
 WeeklyRead.model_rebuild()
 EventRead.model_rebuild()
 ExamRead.model_rebuild()
+AchievementRead.model_rebuild()
 CourseRead.model_rebuild()
 ModuleRead.model_rebuild()

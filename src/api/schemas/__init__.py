@@ -11,6 +11,7 @@ from .models import (
     WeeklyRead,
     EventRead,
     ExamRead,
+    AchievementRead,
     CourseRead,
     ModuleRead,
 )

@@ -5,10 +5,10 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.model import Module, Course, Event, Staff, Degree, Semester
+from database.model import Module, Course, Event, Staff, Degree, Semester, ModuleAchievement
 from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES, _ical_augment_including
 from .events import parse_iso_date
-from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead
+from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead, AchievementRead
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"], responses=PROBLEM_RESPONSES)
@@ -64,7 +64,7 @@ def get_modules(
     id: list[int] | None = Query(None, description="Module ID values (repeatable; OR within this filter)."),
     name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
-    language: list[str] | None = Query(None, description="Module language values (repeatable; case-insensitive, partial match; OR within this filter). NOT IMPLEMENTED: the parser does not populate `Module.language` yet, so this filter currently matches no rows."),
+    language: list[str] | None = Query(None, description="Module language values (repeatable; case-insensitive, partial match; OR within this filter). WILL BE DEPRECATED IN FUTURE MAJOR RELEASES. Derived from the module's courses at parse time."),
     frequency: list[str] | None = Query(None, description="Frequency values (repeatable; case-insensitive, partial match; OR within this filter)."),
     credits_min: int | None = Query(None, description="Minimum credits for the module"),
     credits_max: int | None = Query(None, description="Maximum credits for the module"),
@@ -74,6 +74,10 @@ def get_modules(
     goals: list[str] | None = Query(None, description="Goals text values (repeatable; case-insensitive, partial match; OR within this filter)."),
     content: list[str] | None = Query(None, description="Content text values (repeatable; case-insensitive, partial match; OR within this filter)."),
     exam_prerequisites: list[str] | None = Query(None, description="Exam prerequisites text values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    literature: list[str] | None = Query(None, description="Literature (Literaturangabe) text values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    grading_note: list[str] | None = Query(None, description="Grading note (Anmerkung zur Benotung) values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    elective_classification: list[str] | None = Query(None, description="Module classification in the elective area (Moduleinstufung im Wahlbereich) values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    has_achievements: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any achievements (Leistungen)."),
     degree_id: list[int] | None = Query(None, description="Degree ID values (repeatable; OR within this filter)."),
     faculty_id: list[int] | None = Query(None, description="Faculty ID values (repeatable; OR within this filter)."),
     semester_id: list[int] | None = Query(None, description="Semester ID values (repeatable; OR within this filter)."),
@@ -124,6 +128,12 @@ def get_modules(
         query = query.where(or_(*[Module.content.ilike(f"%{value}%") for value in content])) # type: ignore
     if exam_prerequisites:
         query = query.where(or_(*[Module.exam_prerequisites.ilike(f"%{value}%") for value in exam_prerequisites])) # type: ignore
+    if literature:
+        query = query.where(or_(*[Module.literature.ilike(f"%{value}%") for value in literature])) # type: ignore
+    if grading_note:
+        query = query.where(or_(*[Module.grading_note.ilike(f"%{value}%") for value in grading_note])) # type: ignore
+    if elective_classification:
+        query = query.where(or_(*[Module.elective_classification.ilike(f"%{value}%") for value in elective_classification])) # type: ignore
     if duration_semesters_min is not None:
         query = query.where(Module.duration_semesters >= duration_semesters_min)
     if duration_semesters_max is not None:
@@ -141,6 +151,9 @@ def get_modules(
     if has_staff is not None:
         staff_exist = Module.responsible_persons.any()  # type: ignore
         query = query.where(staff_exist if has_staff else ~staff_exist)
+    if has_achievements is not None:
+        achievements_exist = Module.achievements.any()  # type: ignore
+        query = query.where(achievements_exist if has_achievements else ~achievements_exist)
     if path:
         query = query.where(or_(*[_module_path_segment_condition(value) for value in path]))
     if path_prefix:
@@ -260,6 +273,26 @@ def get_module_degrees(
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Degree)
     items = filter_query(session, query, fielding, Degree, including)
+    return build_list_response(data, items, exports)
+
+@router.get("/{module_id}/achievements", summary="Achievements linked to a module", response_model=PaginatedResponse[AchievementRead], response_model_exclude_unset=True)
+def get_module_achievements(
+    module_id: int,
+    session: SessionDep,
+    sorting: Annotated[dict, Depends(sort_parameters(ModuleAchievement))],
+    including: Annotated[dict, Depends(include_parameters(ModuleAchievement))],
+    fielding: Annotated[dict, Depends(fields_parameters(ModuleAchievement))],
+    paging: Annotated[dict, Depends(paging_parameters)],
+    exports: Annotated[dict, Depends(export_parameters)],
+):
+    """
+    Retrieve the achievements (Leistungen / Modulabschlussleistungen) of a module.
+    """
+    get_or_404(session, Module, module_id, "Module")
+    query = select(ModuleAchievement).where(ModuleAchievement.module_id == module_id)  # type: ignore
+    data, query = page_query(session, query, paging)
+    query = sort_query(query, sorting, ModuleAchievement)
+    items = filter_query(session, query, fielding, ModuleAchievement, including)
     return build_list_response(data, items, exports)
 
 @router.get("/distinct/fields", summary="Distinct values for a module field")
