@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, TypedDict
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from src.parser.types import CourseType, EventType, ExamType, RoomType
+from src.parser.types import AchievementType, CourseType, EventType, ExamType, RoomType
 
 try:
     from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
@@ -36,6 +36,11 @@ _LABEL_MAP: dict[str, str] = {
     "Inhalt":                  "content",
     "Prüfungsvorleistungen":   "exam_prerequisites",
     "Teilnahmevoraussetzungen": "prerequisites",
+    "Literaturangabe":         "literature",
+    "Anzahl Wahlkurse":        "elective_course_count",
+    "Teilnahmevoraussetzungen für den Wahlbereich": "elective_prerequisites",
+    "Moduleinstufung im Wahlbereich": "elective_classification",
+    "Anmerkung zur Benotung":  "grading_note",
 }
 
 _EXAM_LABEL_MAP: dict[str, str] = {
@@ -200,27 +205,15 @@ def print_modules(modules: list[ModuleType]):
     ]
 
 def _fetch_and_parse_module(index: int, module: "ModuleLink", client: ClientLike, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, ModuleType | None]:
+    if _cancelled(cancel_event):
+        return index, None
+
+    url = module.url
+    if not url.startswith("http"):
+        url = "https://almaweb.uni-leipzig.de" + url
+
     try:
-        if _cancelled(cancel_event):
-            return index, None
-
-        url = module.url
-        if not url.startswith("http"):
-            url = "https://almaweb.uni-leipzig.de" + url
-
         response = client.get(url)
-        if response.status_code == 200:
-            if _cancelled(cancel_event):
-                return index, None
-            return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
-
-        log_warning(
-            "module_fetch_status",
-            f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}",
-            module=module.name,
-            status=response.status_code,
-            url=url,
-        )
     except Exception as e:
         log_warning(
             "module_fetch_error",
@@ -229,11 +222,37 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: ClientLike
             url=module.url,
             error=str(e),
         )
+        return index, None
 
-    return index, None
+    if response.status_code != 200:
+        log_warning(
+            "module_fetch_status",
+            f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}",
+            module=module.name,
+            status=response.status_code,
+            url=url,
+        )
+        return index, None
+
+    if _cancelled(cancel_event):
+        return index, None
+
+    try:
+        return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+    except Exception as e:
+        # Distinguish a parser bug/value problem from a network failure. With the
+        # parsers now total this should only fire on genuinely unexpected markup.
+        log_warning(
+            "module_parse_error",
+            f"An error occurred while parsing details for {module.name} under URL: {module.url}: {e}",
+            module=module.name,
+            url=module.url,
+            error=str(e),
+        )
+        return index, None
 
 
-def parseModule(html_content: str, path: list[str], client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> ModuleType | None:
+def parseModule(html_content: str, path: list[str] | list[list[str]], client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> ModuleType | None:
     if _cancelled(cancel_event):
         return None
 
@@ -242,12 +261,19 @@ def parseModule(html_content: str, path: list[str], client: ClientLike | None = 
     if not header:
         log_warning("module_header_missing", "Failed to find module header.")
         return None
-    number, name = header.get_text(strip=True).split(None, 1)
+    header_text = header.get_text(strip=True)
+    header_parts = header_text.split(None, 1)
+    if len(header_parts) < 2:
+        log_warning("module_header_malformed", f"Malformed module header: {header_text!r}", value=header_text)
+        number, name = header_text, ""
+    else:
+        number, name = header_parts
 
     if progress_tracker is not None:
         progress_tracker.set_current_module(f"{number} - {name}")
 
-    values = extract_module_values(soup.select_one("#contentlayoutleft"))
+    left_content = soup.select_one("#contentlayoutleft")
+    values = extract_module_values(left_content)
     # Extract course link URLs using BeautifulSoup (the module page count is low)
     course_urls = [
         str(a["href"])
@@ -257,8 +283,22 @@ def parseModule(html_content: str, path: list[str], client: ClientLike | None = 
     # remove duplicates while preserving order
     seen = set()
     course_urls = [x for x in course_urls if not (x in seen or seen.add(x))]
-    courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client, progress_tracker=progress_tracker)
-    exams = extract_exams(find_exam_section(soup.select_one("#contentlayoutleft")), name, progress_tracker=progress_tracker)
+    try:
+        courses = handleCourseList(course_urls, cancel_event=cancel_event, client=client, progress_tracker=progress_tracker)
+    except Exception as e:
+        log_warning("module_parse_error", f"Failed to parse courses for {name}: {e}", module=name, error=str(e))
+        courses = []
+    try:
+        exams = extract_exams(find_exam_section(left_content), name, progress_tracker=progress_tracker)
+    except Exception as e:
+        # A single bad exam row must not drop the whole module.
+        log_warning("module_parse_error", f"Failed to parse exams for {name}: {e}", module=name, error=str(e))
+        exams = []
+    try:
+        achievements = extract_achievements(find_achievements_table(left_content), name)
+    except Exception as e:
+        log_warning("module_parse_error", f"Failed to parse achievements for {name}: {e}", module=name, error=str(e))
+        achievements = []
     # Free BeautifulSoup tree and raw HTML after extracting all data
     del soup
     del html_content
@@ -266,7 +306,7 @@ def parseModule(html_content: str, path: list[str], client: ClientLike | None = 
     module: ModuleType = {
         "name": name,
         "number": number,
-        "path": path,
+        "path": _normalize_path(path),
         "responsible_person": values["responsible_person"],
         "duration_semesters": parse_int(values["duration_semesters"]),
         "credits": parse_float(values["credits"]),
@@ -276,8 +316,14 @@ def parseModule(html_content: str, path: list[str], client: ClientLike | None = 
         "content": values["content"],
         "exam_prerequisites": values["exam_prerequisites"],
         "prerequisites": parse_prerequisites(values["prerequisites"]),
+        "literature": values["literature"],
+        "elective_course_count": parse_int(values["elective_course_count"]),
+        "elective_prerequisites": values["elective_prerequisites"],
+        "elective_classification": values["elective_classification"],
+        "grading_note": values["grading_note"],
         "courses": courses,
         "exams": exams,
+        "achievements": achievements,
     }
     room_count = len({
         (location.get("name") or location.get("external_id"))
@@ -306,6 +352,11 @@ def extract_module_values(content: Tag | None) -> dict[str, str]:
         "content": "",
         "exam_prerequisites": "",
         "prerequisites": "",
+        "literature": "",
+        "elective_course_count": "",
+        "elective_prerequisites": "",
+        "elective_classification": "",
+        "grading_note": "",
     }
     if content is None:
         return values
@@ -314,6 +365,14 @@ def extract_module_values(content: Tag | None) -> dict[str, str]:
         label = _WHITESPACE_RE.sub(" ", label_tag.get_text(" ", strip=True)).rstrip(":")
         key = _LABEL_MAP.get(label)
         if key is None:
+            # Surface fields the parser does not know about instead of dropping
+            # them silently; the audit groups these warnings.
+            if label:
+                log_warning(
+                    "unknown_module_label",
+                    f"Unknown module field {label!r}.",
+                    label=label,
+                )
             continue
         value_tag = label_tag.find_next_sibling("div")
         if value_tag is None:
@@ -366,6 +425,68 @@ def find_exam_section(right_content: Tag | None) -> Tag | None:
                 return child
 
     return None
+
+
+def _normalize_path(path: list[str] | list[list[str]] | None) -> list[list[str]]:
+    """Normalise a navigation path to the canonical ``list[list[str]]`` shape."""
+    if not path:
+        return []
+    if any(isinstance(node, list) for node in path):
+        return [[str(node) for node in group] for group in path if group]  # type: ignore[union-attr]
+    return [[str(node) for node in path]]
+
+
+def find_achievements_table(right_content: Tag | None) -> Tag | None:
+    """Return the "Leistungen" (module achievements) table, if present.
+
+    The table is not always nested inside ``#contentlayoutleft``; like the exams
+    section it can live in a sibling branch of the page form, so search from the
+    enclosing form when available.
+    """
+    if right_content is None:
+        return None
+    scope = right_content.parent if isinstance(right_content.parent, Tag) else right_content
+    table = scope.find("table", attrs={"summary": "Leistungen"})
+    return table if isinstance(table, Tag) else None
+
+
+def extract_achievements(table: Tag | None, module_name: str) -> list[AchievementType]:
+    """Extract ``Modulabschlussleistungen`` (achievements) rows.
+
+    Columns are identified by their semantic class names:
+    ``rw-detail-reqachieve`` (name), ``rw-detail-compulsory`` (Leistungskombination)
+    and ``rw-detail-weight`` (Gewichtung). This table is otherwise not read by the
+    parser, so its data was previously dropped entirely.
+    """
+    if table is None:
+        return []
+
+    achievements: list[AchievementType] = []
+    for row in table.select("tbody tr"):
+        by_class: dict[str, Tag] = {}
+        for cell in row.find_all("td", recursive=False):
+            for class_name in (cell.get("class") or []):
+                if class_name.startswith("rw-detail"):
+                    by_class.setdefault(class_name, cell)
+
+        name_cell = by_class.get("rw-detail-reqachieve")
+        if name_cell is None:
+            continue
+        name = _WHITESPACE_RE.sub(" ", _cell_value(name_cell)).strip()
+        if not name:
+            continue
+
+        combination_raw = _cell_value(by_class["rw-detail-compulsory"]) if "rw-detail-compulsory" in by_class else ""
+        weight_raw = _cell_value(by_class["rw-detail-weight"]) if "rw-detail-weight" in by_class else ""
+
+        achievements.append({
+            "name": name,
+            "required": _WHITESPACE_RE.sub(" ", combination_raw).strip() == "Ja",
+            "weight": parse_float(weight_raw) if weight_raw else None,
+            "combination": _WHITESPACE_RE.sub(" ", combination_raw).strip(),
+        })
+    return achievements
+
 
 def parse_exam_datetime(datetime_str: str) -> tuple[str, str, str]:
     # Expected format: "Mi, 15. Jul. 2026, 08:30 - 09:30"

@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
@@ -16,11 +17,11 @@ except ModuleNotFoundError:
     from src.parser.utils import _is_multidimensional, log_warning  # type: ignore
 
 try:
-    from .model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, Degree,
+    from .model import (Course, Event, Module, Faculty, ModuleExam, ModuleAchievement, Location, Staff, Status, Semester, Building, Degree,
                         ModuleStaffLink, CourseStaffLink, EventStaffLink,
                         ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink, ModuleDegreeLink)
 except ModuleNotFoundError:
-    from src.database.model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, Degree,
+    from src.database.model import (Course, Event, Module, Faculty, ModuleExam, ModuleAchievement, Location, Staff, Status, Semester, Building, Degree,
                                     ModuleStaffLink, CourseStaffLink, EventStaffLink,
                                     ModuleCourseLink, CourseEventLink, ModuleExamStaffLink, CourseSemesterLink, EventSemesterLink, ModuleSemesterLink, ModuleExamSemesterLink, ModuleStartSemesterLink, ModuleDegreeLink)
 DATABASE_URL = "sqlite:///database.db"
@@ -67,6 +68,8 @@ def create_db_and_tables():
     """
     SQLModel.metadata.create_all(engine)
     _migrate_degree_columns()
+    _migrate_module_columns()
+    _migrate_course_columns()
     _migrate_indexes()
 
 
@@ -95,6 +98,42 @@ def _migrate_degree_columns():
                 connection.execute(text(f"ALTER TABLE degree ADD COLUMN {name} {ddl}"))
 
 
+def _add_columns_if_missing(table: str, new_columns: dict[str, str]) -> None:
+    """Add ``new_columns`` (name -> SQLite type/default) to an existing table.
+
+    ``SQLModel.metadata.create_all()`` never alters an existing table, so columns
+    introduced after a database was created must be backfilled explicitly.
+    """
+    with engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text(f"PRAGMA table_info({table})"))}
+        if not existing:
+            return  # table does not exist yet; create_all() created it with all columns
+        for name, ddl in new_columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+def _migrate_module_columns():
+    """Backfill the module columns introduced with the parser fix (literature, elective fields, grading note)."""
+    _add_columns_if_missing("module", {
+        "literature": "VARCHAR DEFAULT ''",
+        "elective_course_count": "INTEGER DEFAULT 0",
+        "elective_prerequisites": "VARCHAR DEFAULT ''",
+        "elective_classification": "VARCHAR DEFAULT ''",
+        "grading_note": "VARCHAR DEFAULT ''",
+    })
+
+
+def _migrate_course_columns():
+    """Backfill the course columns introduced with the parser fix (org unit, free-text sections)."""
+    _add_columns_if_missing("course", {
+        "org_unit": "VARCHAR DEFAULT ''",
+        "official_description": "VARCHAR DEFAULT ''",
+        "organisational": "VARCHAR DEFAULT ''",
+        "literature": "VARCHAR DEFAULT ''",
+    })
+
+
 # Indexes introduced after the initial schema. ``SQLModel.metadata.create_all()`` only creates
 # missing tables and never adds indexes to existing ones, so any missing index is created here
 # explicitly. These keep the reverse (``b -> a``) lookups used by ``<Model>.any(...)`` filters
@@ -114,6 +153,7 @@ _PERFORMANCE_INDEXES: dict[str, list[str]] = {
     "moduleexamsemesterlink": ["semester_id"],
     "event": ["event_date", "location_id"],
     "moduleexam": ["module_id"],
+    "moduleachievement": ["module_id"],
     "location": ["building_id"],
     "module": ["faculty_id"],
     "degree": ["faculty_id"],
@@ -523,6 +563,15 @@ def _link_module_exam_semester(session: Session, exam_id: int, semester_id: int)
     if link is None:
         session.add(ModuleExamSemesterLink(module_exam_id=exam_id, semester_id=semester_id))
 
+def _normalise_path_groups(path) -> list[list[str]]:
+    """Normalise a module path (flat ``list[str]`` or ``list[list[str]]``) to ``list[list[str]]``."""
+    if not path:
+        return []
+    if any(isinstance(node, list) for node in path):
+        return [[str(node) for node in group] for group in path if group]
+    return [[str(node) for node in path]]
+
+
 def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[int, bool]:
     """
     Look up a module by number and name. If it does not exist, insert it.
@@ -540,28 +589,41 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
     if module is not None:
         if module.id is None:
             raise RuntimeError("Module to add to database has no id")
-        # Add path elements not already present in the module's path
-        # Handle correctly that the given path and the existing path can be either list[str] or list[list[str]]
-        # Normalise both representations to list[list[str]] so we can compare apples-to-apples
-        if _is_multidimensional(module_data["path"]):
-            new_paths: list[list[str]] = module_data["path"]  # type: ignore[assignment]
-        else:
-            new_paths = [[p] for p in module_data["path"]]
+        # Normalise both the incoming and the stored path to list[list[str]].
+        new_paths = _normalise_path_groups(module_data["path"])
+        existing_normalised = _normalise_path_groups(module.path)
 
-        if _is_multidimensional(module.path):
-            existing_normalised: list[list[str]] = module.path  # type: ignore[assignment]
-        else:
-            existing_normalised = [[p] for p in module.path]
-
+        # Reassign instead of mutating in place: SQLAlchemy does not track in-place
+        # mutations of a Column(JSON), so an append would silently never persist.
+        merged = [list(group) for group in existing_normalised]
         for new_path in new_paths:
-            if new_path not in existing_normalised:
-                # Append in the same format as the existing path column
-                if _is_multidimensional(module.path):
-                    module.path.append(new_path)  # type: ignore[arg-type]
-                else:
-                    for item in new_path:
-                        if item not in module.path:
-                            module.path.append(item)  # type: ignore[arg-type]
+            if new_path not in merged:
+                merged.append(list(new_path))
+        module.path = merged
+
+        # Backfill scalar fields that are still empty (a later page may carry a
+        # value an earlier one lacked). Never overwrite a non-empty value.
+        for field, value in (
+            ("frequency", module_data.get("frequency", "")),
+            ("goals", module_data.get("goals", "")),
+            ("content", module_data.get("content", "")),
+            ("exam_prerequisites", module_data.get("exam_prerequisites", "")),
+            ("literature", module_data.get("literature", "")),
+            ("elective_prerequisites", module_data.get("elective_prerequisites", "")),
+            ("elective_classification", module_data.get("elective_classification", "")),
+            ("grading_note", module_data.get("grading_note", "")),
+        ):
+            if value and not getattr(module, field):
+                setattr(module, field, value)
+        if module_data.get("credits") and not module.credits:
+            module.credits = module_data["credits"]
+        if module_data.get("duration_semesters") and not module.duration_semesters:
+            module.duration_semesters = module_data["duration_semesters"]
+        if module_data.get("elective_course_count") and not module.elective_course_count:
+            module.elective_course_count = module_data["elective_course_count"]
+        if module_data.get("prerequisites") and not module.prerequisites:
+            module.prerequisites = module_data["prerequisites"]
+        session.add(module)
         return module.id, False
     
     faculty_id = None
@@ -575,6 +637,8 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
     module = Module(
         name=module_data["name"],
         number=module_data["number"],
+        # ``language`` is derived from the module's courses after insertion; it is
+        # not present in the module page data.
         language=module_data.get("language", ""),
         duration_semesters=module_data.get("duration_semesters", 0),
         credits=module_data.get("credits", 0),
@@ -583,7 +647,12 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
         content=module_data.get("content", ""),
         exam_prerequisites=module_data.get("exam_prerequisites", ""),
         prerequisites=module_data.get("prerequisites", {}),
-        path=module_data.get("path", []),
+        literature=module_data.get("literature", ""),
+        elective_course_count=module_data.get("elective_course_count", 0),
+        elective_prerequisites=module_data.get("elective_prerequisites", ""),
+        elective_classification=module_data.get("elective_classification", ""),
+        grading_note=module_data.get("grading_note", ""),
+        path=_normalise_path_groups(module_data.get("path", [])),
         faculty_id=faculty_id
     ) # type: ignore
     # Add the module to the session and flush (save to DB) to get an ID assigned, which is needed for linking courses
@@ -619,6 +688,25 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
     if course is not None:
         if course.id is None:
             raise RuntimeError("Course to add to database has no id")
+        # Link any staff this occurrence carries that earlier ones did not. The old
+        # code returned early and silently dropped them.
+        for staff_name in course_data.get("staff", []):
+            if staff_name:
+                staff_id = _get_or_insert_staff(session, staff_name)
+                _link_course_staff(session, course.id, staff_id)
+        # Backfill scalar fields that are still empty. Never overwrite a value.
+        for field, value in (
+            ("language", course_data.get("language", "")),
+            ("org_unit", course_data.get("org_unit", "")),
+            ("official_description", course_data.get("official_description", "")),
+            ("organisational", course_data.get("organisational", "")),
+            ("literature", course_data.get("literature", "")),
+        ):
+            if value and not getattr(course, field):
+                setattr(course, field, value)
+        if course_data.get("weekly_hours") and not course.weekly_hours:
+            course.weekly_hours = course_data["weekly_hours"]
+        session.add(course)
         return course.id, False
 
     # Unpacking of course_data into Course constructor, excluding "events" key for separate handling, because "events" is not a field of Course
@@ -628,7 +716,11 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
         type=_get_or_insert_event_type(session, course_data["type"]),
         weekly_hours=course_data.get("weekly_hours", 0),
         language=course_data.get("language", ""),
-        status=_get_or_insert_status(session, course_data.get("status", ""))
+        status=_get_or_insert_status(session, course_data.get("status", "")),
+        org_unit=course_data.get("org_unit", ""),
+        official_description=course_data.get("official_description", ""),
+        organisational=course_data.get("organisational", ""),
+        literature=course_data.get("literature", ""),
     )  # type: ignore
     # Add the course to the session and flush (save to DB) to get an ID assigned, which is needed for linking events
     session.add(course)
@@ -695,10 +787,66 @@ def _insert_exam_if_new(session: Session, module_id: int, exam_data: ExamType) -
 
     return exam.id, True
 
-def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, bool]:
+def _insert_achievement_if_new(session: Session, module_id: int, achievement_data) -> tuple[int, bool]:
+    """Insert a module achievement ("Leistungen" row) if an identical one does not exist."""
+    if achievement_data.get("weight") is None:
+        weight_condition = ModuleAchievement.weight == null()
+    else:
+        weight_condition = ModuleAchievement.weight == achievement_data["weight"]
+
+    achievement = session.exec(
+        select(ModuleAchievement)
+        .where(ModuleAchievement.module_id == module_id)
+        .where(ModuleAchievement.name == achievement_data["name"])
+        .where(ModuleAchievement.required == achievement_data["required"])
+        .where(weight_condition)
+    ).first()
+
+    if achievement is not None:
+        if achievement.id is None:
+            raise RuntimeError("Achievement to add to database has no id")
+        return achievement.id, False
+
+    achievement = ModuleAchievement(
+        module_id=module_id,
+        name=achievement_data["name"],
+        required=achievement_data["required"],
+        weight=achievement_data["weight"],
+        combination=achievement_data.get("combination", ""),
+    )  # type: ignore
+    session.add(achievement)
+    session.flush()
+    if achievement.id is None:
+        raise RuntimeError("Could not get achievement id after add and flush to database")
+    return achievement.id, True
+
+
+def _set_course_weekday(session: Session, course_id: int, weekday: int) -> None:
+    """Set ``Course.weekday`` if it is not set yet (derived; see the model note)."""
+    course = session.get(Course, course_id)
+    if course is not None and course.weekday is None:
+        course.weekday = weekday
+        session.add(course)
+
+
+def _set_module_language(session: Session, module_id: int, language: str) -> None:
+    """Set ``Module.language`` if it is not set yet (derived; see the model note)."""
+    module = session.get(Module, module_id)
+    if module is not None and not module.language:
+        module.language = language
+        session.add(module)
+
+
+def _insert_event_if_new(session: Session, event_data: EventType, course_id: int) -> tuple[int, bool]:
     """
-    Insert a course event if no identical record (same date, time slot, and location) already exists.
-    If a matching event is found, any staff from event_data not yet linked to it are added.
+    Insert a course event if no identical record already exists.
+
+    Two sessions are only treated as one physical event when they share the same
+    room, date and time slot. When the room is **unknown** the dedup is scoped to
+    ``course_id``: without a room a shared slot is not evidence of a shared
+    session, and merging there used to fuse unrelated courses into one event.
+    If a matching event is found, any staff from event_data not yet linked to it
+    are added.
 
     Returns True if a new event was inserted, False if an existing one was reused.
     """
@@ -708,15 +856,23 @@ def _insert_event_if_new(session: Session, event_data: EventType) -> tuple[int, 
     if event_data["location"] is not None:
         location_id = _get_or_insert_location(session, event_data["location"])
 
-    # Two events are the same physical session when they share the same room, date, and time slot.
     # The per-course sequential number is intentionally excluded: it is not a global identifier.
-    event = session.exec(
+    query = (
         select(Event)
         .where(Event.event_date == event_data["event_date"])
         .where(Event.start_time == event_data["start_time"])
         .where(Event.end_time == event_data["end_time"])
         .where(Event.location_id == location_id)
-    ).first()
+    )
+    if location_id is None:
+        # No room: only reuse an event already linked to this same course.
+        query = query.where(
+            Event.id.in_(
+                select(CourseEventLink.event_id).where(CourseEventLink.course_id == course_id)
+            )
+        )
+
+    event = session.exec(query).first()
 
     if event is not None:
         if event.id is None:
@@ -794,50 +950,31 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
         if faculty_name and faculty_prefix is not None:
             get_or_insert_faculty(session, faculty_name, faculty_prefix)
 
-        semester_name = None
-        semester_year = None
-        semester_term = None
-        if len(module_data["path"]) > 0:
-            # We also try to extract the semester from the navigation path, looking for an element that starts with "SoSe" or "WiSe"
-            path_obj: list[list[str]] = []
-            if _is_multidimensional(module_data["path"]):
-                path_obj = module_data["path"] # type: ignore
-            else:
-                path_obj = [module_data["path"]] # type: ignore
-            
-            for path_group in path_obj:
-                for path_element in path_group:
-                    if path_element.startswith("SoSe") or path_element.startswith("WiSe"):
-                        if semester_name is not None and semester_name != path_element:
-                            log_warning(
-                                "multiple_semesters",
-                                f"Warning: Multiple semester names found in module path for module {module_data['number']}: "
-                                f"{semester_name} and {path_element}. Using the first one. Path: {module_data['path']}",
-                                number=module_data["number"],
-                                first=semester_name,
-                                second=path_element,
-                                path=module_data["path"],
-                            )
-                            break
-                        semester_name = path_element
-                        if path_element.startswith("SoSe"):
-                            semester_term = "SoSe"
-                        elif path_element.startswith("WiSe"):
-                            semester_term = "WiSe"
-                        year_match = re.search(r"\d{2,4}", path_element)
-                        if year_match:
-                            semester_year = int(year_match.group(0))
-                        break
+        # Collect every semester referenced by the module's navigation paths. A
+        # module offered in several semesters must be linked to all of them; the
+        # old code linked only the first one it found.
+        semester_ids: list[int] = []
         semester_id = None
-        if semester_name and semester_year and semester_term:
-            semester_id = _get_or_insert_semester(session, semester_name, semester_year, semester_term)
+        for path_group in _normalise_path_groups(module_data["path"]):
+            for path_element in path_group:
+                if not (path_element.startswith("SoSe") or path_element.startswith("WiSe")):
+                    continue
+                term = "SoSe" if path_element.startswith("SoSe") else "WiSe"
+                year_match = re.search(r"\d{2,4}", path_element)
+                if not year_match:
+                    continue
+                sem_id = _get_or_insert_semester(session, path_element, int(year_match.group(0)), term)
+                if sem_id not in semester_ids:
+                    semester_ids.append(sem_id)
+                if semester_id is None:
+                    semester_id = sem_id
 
         # Get or insert the module, and get its ID for linking courses
         module_id, inserted = _get_or_insert_module(session, module_data)
         if inserted:
             inserted_count["modules"] += 1
-        if semester_id is not None:
-            _link_module_semester(session, module_id, semester_id)
+        for sem_id in semester_ids:
+            _link_module_semester(session, module_id, sem_id)
         if module_data.get("start_semester"):
             start_semester_name = module_data["start_semester"]
             start_semester_year = None
@@ -861,6 +998,11 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
             if semester_id is not None:
                 _link_module_exam_semester(session, exam_id, semester_id)
 
+        # Module achievements ("Leistungen" table): weighting, combination, etc.
+        for achievement_data in module_data.get("achievements", []):
+            _insert_achievement_if_new(session, module_id, achievement_data)
+
+        course_languages: list[str] = []
         for course_data in module_data["courses"]:
             # Get or insert each course, and get its corresponding ID for linking the events
             if course_data is None:
@@ -872,18 +1014,32 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
             if course_inserted:
                 inserted_count["courses"] += 1
             inserted = inserted or course_inserted
+            if course_data.get("language"):
+                course_languages.append(course_data["language"])
 
+            event_weekdays: list[int] = []
             for event_data in course_data["events"]:
                 if event_data is None:
                     continue
-                # Insert each event if it does not already exist.
-                event_id, event_inserted = _insert_event_if_new(session, event_data)
+                # Insert each event if it does not already exist. The course id scopes
+                # the dedup for sessions without a known room.
+                event_id, event_inserted = _insert_event_if_new(session, event_data, course_id)
                 _link_course_event(session, course_id, event_id)
                 if semester_id is not None:
                     _link_event_semester(session, event_id, semester_id)
                 if event_inserted:
                     inserted_count["events"] += 1
                 inserted = inserted or event_inserted
+                if event_data.get("event_date") is not None:
+                    event_weekdays.append(event_data["event_date"].isoweekday())
+
+            # Course.weekday is derived from its events (deprecated as a stored column).
+            if event_weekdays:
+                _set_course_weekday(session, course_id, Counter(event_weekdays).most_common(1)[0][0])
+
+        # Module.language is derived from its courses (deprecated as a stored column).
+        if course_languages:
+            _set_module_language(session, module_id, Counter(course_languages).most_common(1)[0][0])
 
         # Commit all changes to the database at once after processing the entire module graph
         # This doesn't insert any record if any error occurs during the process, so all relationships are guaranteed to be consistent

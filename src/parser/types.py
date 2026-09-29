@@ -33,6 +33,10 @@ class CourseType(TypedDict):
     language: str
     events: list[EventType]
     status: str
+    org_unit: str
+    official_description: str
+    organisational: str
+    literature: str
 
 class ExamType(TypedDict):
     name: str
@@ -42,10 +46,25 @@ class ExamType(TypedDict):
     staff: list[str]
     required: bool
 
+class AchievementType(TypedDict):
+    """A ``Modulabschlussleistung`` / achievement row from the "Leistungen" table.
+
+    The source table has no separate column for staff, so this carries only the
+    achievement name, the compulsory flag, the weighting and the raw
+    ``Leistungskombination`` value.
+    """
+
+    name: str
+    required: bool
+    weight: float | None
+    combination: str
+
 class ModuleType(TypedDict):
     name: str
     number: str
-    path: list[str] | list[list[str]]
+    # Canonical navigation-path shape: a list of path groups (``list[list[str]]``).
+    # Flat paths are normalised into a single group on insert.
+    path: list[list[str]]
     responsible_person: str
     duration_semesters: int
     credits: float
@@ -55,5 +74,11 @@ class ModuleType(TypedDict):
     content: str
     exam_prerequisites: str
     prerequisites: dict[str, str]
+    literature: str
+    elective_course_count: int
+    elective_prerequisites: str
+    elective_classification: str
+    grading_note: str
     courses: list[CourseType | None]
     exams: list[ExamType]
+    achievements: list[AchievementType]

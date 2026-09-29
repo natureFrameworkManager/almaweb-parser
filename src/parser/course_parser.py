@@ -33,6 +33,10 @@ _COURSE_LABEL_MAP: dict[str, tuple[str, str]] = {
     "Veranstaltungsart":     ("type",         "div"),
     "Semesterwochenstunden": ("weekly_hours", "div"),
     "Unterrichtssprache":    ("language",     "span"),
+    "Orga-Einheit":          ("org_unit",     "span"),
+    "Offizielle Kursbeschreibung": ("official_description", "span"),
+    "Organisatorisches":     ("organisational", "span"),
+    "Literatur":             ("literature",   "span"),
 }
 
 # CampusNet renders every table cell as a flex container holding a mobile-only
@@ -152,24 +156,13 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None, client:
 
 
 def _fetch_and_parse_course(index: int, url: str, client: ClientLike, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, bool, CourseType | None]:
+    if _cancelled(cancel_event):
+        return index, False, None
+
+    if not url.startswith("http"):
+        url = "https://almaweb.uni-leipzig.de" + url
     try:
-        if _cancelled(cancel_event):
-            return index, False, None
-
-        if not url.startswith("http"):
-            url = "https://almaweb.uni-leipzig.de" + url
         response = client.get(url)
-        if response.status_code == 200:
-            if _cancelled(cancel_event):
-                return index, False, None
-            return index, True, parseCourse(response.text, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
-
-        log_warning(
-            "course_fetch_status",
-            f"Failed to fetch details with status code {response.status_code} from URL: {url}",
-            status=response.status_code,
-            url=url,
-        )
     except Exception as e:
         log_warning(
             "course_fetch_error",
@@ -177,8 +170,31 @@ def _fetch_and_parse_course(index: int, url: str, client: ClientLike, cancel_eve
             url=url,
             error=str(e),
         )
+        return index, False, None
 
-    return index, False, None
+    if response.status_code != 200:
+        log_warning(
+            "course_fetch_status",
+            f"Failed to fetch details with status code {response.status_code} from URL: {url}",
+            status=response.status_code,
+            url=url,
+        )
+        return index, False, None
+
+    if _cancelled(cancel_event):
+        return index, False, None
+
+    try:
+        return index, True, parseCourse(response.text, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+    except Exception as e:
+        # Distinguish a parser bug/value problem from a network failure.
+        log_warning(
+            "course_parse_error",
+            f"An error occurred while parsing details from URL: {url}: {e}",
+            url=url,
+            error=str(e),
+        )
+        return index, False, None
 
 def parseCourse(html_content: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> CourseType | None:
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -186,9 +202,20 @@ def parseCourse(html_content: str, client: ClientLike | None = None, cancel_even
     if not header:
         log_warning("course_header_missing", "Failed to find course header.")
         return None
-    number, name = header.get_text(strip=True).split(None, 1)
+    header_text = header.get_text(strip=True)
+    header_parts = header_text.split(None, 1)
+    if len(header_parts) < 2:
+        log_warning("course_header_malformed", f"Malformed course header: {header_text!r}", value=header_text)
+        number, name = header_text, ""
+    else:
+        number, name = header_parts
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
-    events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+    try:
+        events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+    except Exception as e:
+        # A single bad row must not drop the whole course.
+        log_warning("course_parse_error", f"Failed to parse events for {name}: {e}", course=name, error=str(e))
+        events = []
     staff = _clean_staff(values["staff"])
 
     # Free BeautifulSoup tree and raw HTML after extracting all data
@@ -205,6 +232,10 @@ def parseCourse(html_content: str, client: ClientLike | None = None, cancel_even
         "type": values["type"],
         "weekly_hours": int(values["weekly_hours"]) if values["weekly_hours"].isdigit() else 0,
         "language": values["language"],
+        "org_unit": values["org_unit"],
+        "official_description": values["official_description"],
+        "organisational": values["organisational"],
+        "literature": values["literature"],
         "events": events,
         "status": "almaweb"
     }
@@ -225,7 +256,16 @@ def find_termine_section(right_content: Tag | None) -> Tag | None:
 
 
 def extract_course_values(content: Tag | None) -> dict[str, str]:
-    values: dict[str, str] = {"staff": "", "type": "", "weekly_hours": "", "language": ""}
+    values: dict[str, str] = {
+        "staff": "",
+        "type": "",
+        "weekly_hours": "",
+        "language": "",
+        "org_unit": "",
+        "official_description": "",
+        "organisational": "",
+        "literature": "",
+    }
     if content is None:
         return values
 
@@ -236,6 +276,14 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
         label = _WHITESPACE_RE.sub(" ", label_tag.get_text(" ", strip=True)).rstrip(":")
         entry = _COURSE_LABEL_MAP.get(label)
         if entry is None:
+            # Surface fields the parser does not know about instead of dropping
+            # them silently; the audit groups these warnings.
+            if label:
+                log_warning(
+                    "unknown_course_label",
+                    f"Unknown course field {label!r}.",
+                    label=label,
+                )
             continue
         key, tag_name = entry
         tag = row.find(tag_name)
@@ -328,7 +376,16 @@ def _parse_date(value: str) -> date | None:
     if not m:
         log_warning("failed_date", f"Failed to parse date: {value}", value=value)
         return None
-    return date(int(m.group(3)), _MONTHS.get(m.group(2), 0), int(m.group(1)))
+    month = _MONTHS.get(m.group(2))
+    if month is None:
+        log_warning("failed_date", f"Unknown month in date: {value}", value=value)
+        return None
+    try:
+        return date(int(m.group(3)), month, int(m.group(1)))
+    except ValueError:
+        # e.g. "31. Feb. 2025"; never raise so the surrounding record survives.
+        log_warning("invalid_date", f"Invalid date: {value}", value=value)
+        return None
 
 
 def _parse_time(value: str) -> time | None:
@@ -337,4 +394,12 @@ def _parse_time(value: str) -> time | None:
     if not m:
         log_warning("failed_time", f"Failed to parse time: {value}", value=value)
         return None
-    return time(int(m.group(1)), int(m.group(2)))
+    hour, minute = int(m.group(1)), int(m.group(2))
+    # AlmaWeb uses "24:00" to mark the end of a full-day session; represent it as
+    # the last minute of the day instead of raising ``time(24, 0)``.
+    if hour == 24:
+        return time(23, 59)
+    if not (0 <= hour <= 23) or not (0 <= minute <= 59):
+        log_warning("invalid_time", f"Out-of-range time: {value}", value=value)
+        return None
+    return time(hour, minute)

@@ -117,6 +117,9 @@ class Module(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True) # Primary key, auto-incremented by the database
     name: str
     number: str = Field(index=True)
+    # Derived from the module's courses (there is no module-level language field in
+    # AlmaWeb). Deprecated as a stored column: use course language where possible;
+    # will be removed in the next major version.
     language: str = ""
     duration_semesters: int = 0
     credits: float = 0.0
@@ -125,16 +128,24 @@ class Module(SQLModel, table=True):
     content: str = ""
     exam_prerequisites: str = ""
     prerequisites: dict[str, str] = Field(sa_column=Column(JSON))
+    literature: str = ""
+    elective_course_count: int = 0
+    elective_prerequisites: str = ""
+    elective_classification: str = ""
+    grading_note: str = ""
     faculty_id: int | None = Field(foreign_key="faculty.id", index=True) # The faculty to which the module belongs, if known
 
     faculty: "Faculty" = Relationship(back_populates="modules")
-    path: list[str] | list[list[str]] = Field(sa_column=Column(JSON)) # The path in the original navigation structure, e.g. ["Root","Informatik","Informatik (Bachelor of Science)","Pflichtmodule (empfohlen für das 6. Fachsemester)"]
+    # Canonical shape is a list of path groups (``list[list[str]]``); older rows may
+    # still hold a flat ``list[str]`` and are normalised on read.
+    path: list[list[str]] = Field(sa_column=Column(JSON)) # The path in the original navigation structure
     responsible_persons: list["Staff"] = Relationship(back_populates="modules", link_model=ModuleStaffLink)
     start_semester: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleStartSemesterLink)
     semesters: list["Semester"] = Relationship(back_populates="modules", link_model=ModuleSemesterLink)
     degrees: list["Degree"] = Relationship(back_populates="modules", link_model=ModuleDegreeLink)
     courses: list["Course"] = Relationship(back_populates="modules", link_model=ModuleCourseLink)
     exams: list["ModuleExam"] = Relationship(back_populates="module")
+    achievements: list["ModuleAchievement"] = Relationship(back_populates="module")
 
 class Course(SQLModel, table=True):
     """
@@ -148,10 +159,17 @@ class Course(SQLModel, table=True):
     name: str = ""
     number: str = ""
     type: int = Field(foreign_key="eventtype.id")
+    # Derived from the most common weekday of the course's events. Deprecated as a
+    # stored column: compute it from events instead; will be removed in the next
+    # major version.
     weekday: int | None = None # 1=Monday, 2=Tuesday, ..., 7=Sunday. This is not always available in the source data, so it can be None.
     weekly_hours: int = 0
     language: str = ""
     status: int = Field(foreign_key="status.id")
+    org_unit: str = ""
+    official_description: str = ""
+    organisational: str = ""
+    literature: str = ""
 
     staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
     semesters: list["Semester"] = Relationship(back_populates="courses", link_model=CourseSemesterLink)
@@ -304,6 +322,24 @@ class ModuleExam(SQLModel, table=True):
     staff: list["Staff"] = Relationship(back_populates="exams", link_model=ModuleExamStaffLink)
     semesters: list["Semester"] = Relationship(back_populates="exams", link_model=ModuleExamSemesterLink)
     module: "Module" = Relationship(back_populates="exams")
+
+
+class ModuleAchievement(SQLModel, table=True):
+    """A ``Modulabschlussleistung`` (module achievement) from the "Leistungen" table.
+
+    Distinct from :class:`ModuleExam` ("Modulabschlussprüfungen"): this table lists
+    the coursework/achievements that make up the module, including their weighting
+    (``Gewichtung``) and whether they are part of a ``Leistungskombination``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    module_id: int = Field(foreign_key="module.id", index=True)
+    name: str = ""            # "Kurs/Modulabschlussleistungen", e.g. "Portfolio (12 Wochen)"
+    required: bool = False    # "Leistungskombination" == "Ja"
+    weight: float | None = None  # "Gewichtung"
+    combination: str = ""     # raw "Leistungskombination" value
+
+    module: "Module" = Relationship(back_populates="achievements")
 
 
 class SyncRun(SQLModel, table=True):
