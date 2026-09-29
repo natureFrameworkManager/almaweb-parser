@@ -46,7 +46,7 @@ from src.parser.module_parser import (  # noqa: E402
     find_exam_section,
     parse_exam_datetime,
 )
-from src.parser.utils import set_warning_print  # noqa: E402
+from src.parser.utils import set_warning_print, text_with_structure  # noqa: E402
 
 set_warning_print(False)
 
@@ -81,7 +81,7 @@ def independent_labels(left) -> tuple[dict[str, list[str]], list[str]]:
         if not label:
             continue
         sibling = label_tag.find_next_sibling("div")
-        value = norm(sibling.get_text(" ", strip=True)) if sibling is not None else ""
+        value = text_with_structure(sibling) if sibling is not None else ""
         values.setdefault(label, []).append(value)
         order.append(label)
     return values, order
@@ -139,7 +139,7 @@ def main() -> int:
             if label not in independent:
                 continue
             raw = independent[label][-1]
-            got = norm(parsed.get(key, ""))
+            got = (parsed.get(key, "") or "").replace("\xa0", " ").strip()
             if raw and not got:
                 mismatches += 1
                 mismatch_by_label[label] += 1

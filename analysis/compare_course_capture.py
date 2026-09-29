@@ -45,7 +45,7 @@ from src.parser.course_parser import (  # noqa: E402
     parseCourse,
 )
 from src.parser.room_parser import set_room_fetch_enabled  # noqa: E402
-from src.parser.utils import set_warning_print  # noqa: E402
+from src.parser.utils import set_warning_print, text_with_structure  # noqa: E402
 
 set_warning_print(False)
 
@@ -151,8 +151,9 @@ def main() -> int:
                     continue
                 _, tag_name = entry
                 container = value_container(row, label_tag)
-                truth = norm(container.get_text(" ", strip=True))
-                got = norm(row.find(tag_name).get_text(strip=True)) if row.find(tag_name) else ""
+                truth = text_with_structure(container)
+                sub = row.find(tag_name)
+                got = text_with_structure(sub) if sub is not None else ""
                 spans = [
                     s for s in container.find_all("span")
                     if _MOBILE_LABEL_CLASS not in (s.get("class") or [])

@@ -33,8 +33,8 @@ sys.path.insert(0, str(REPO))
 
 os.environ.setdefault("ALMAWEB_LOG_DIR", str(REPO / "analysis" / "out" / "warnings"))
 
-from src.parser.module_parser import parse_prerequisites  # noqa: E402
-from src.parser.utils import set_warning_print  # noqa: E402
+from src.parser.module_parser import parse_prerequisites, _split_prerequisite  # noqa: E402
+from src.parser.utils import set_warning_print, text_with_structure  # noqa: E402
 
 set_warning_print(False)
 
@@ -86,28 +86,33 @@ def main() -> int:
         pages_with_prereq += 1
         # The raw lines as the page author wrote them ("<br>" -> newline).
         raw_lines = [norm for norm in (l.strip() for l in target.get_text("\n", strip=True).split("\n")) if norm]
-        # What the parser actually hands to parse_prerequisites (all whitespace collapsed).
-        collapsed = _WS.sub(" ", target.get_text(" ", strip=True))
-        prereq = parse_prerequisites(collapsed)
+        # What the parser now hands to parse_prerequisites (block-aware, newlines kept).
+        structured = text_with_structure(target)
+        prereq = parse_prerequisites(structured)
 
         colon_lines = [l for l in raw_lines if ":" in l]
         if len(raw_lines) > 1:
             pages_multi_line += 1
         if len(colon_lines) > 1:
             pages_with_colon_lines += 1
-            lost = len(colon_lines) - len(prereq)
-            if lost > 0:
-                keys_lost += lost
-                if len(samples) < 25:
-                    samples.append({
-                        "page": html.name,
-                        "raw_lines": raw_lines[:4],
-                        "stored_keys": list(prereq.keys()),
-                        "lost_keys": lost,
-                    })
-        # any stored value that still contains a later "key: " segment is merged
-        for key, value in prereq.items():
-            if value.count(": ") >= 1:
+        expected_keys = []
+        for line in raw_lines:
+            split = _split_prerequisite(line)
+            if split is not None:
+                expected_keys.append(_WS.sub(" ", split[0]).strip())
+        missing = [k for k in expected_keys if k not in prereq]
+        if missing:
+            keys_lost += len(missing)
+            if len(samples) < 25:
+                samples.append({
+                    "page": html.name,
+                    "raw_lines": raw_lines[:4],
+                    "stored_keys": list(prereq.keys()),
+                    "lost_keys": missing[:3],
+                })
+        # swallowed keys: a stored value still embeds the next "<key>:" segment
+        for value in prereq.values():
+            if any(key and f"{key}:" in value for key in expected_keys):
                 merged_value += 1
                 break
 
