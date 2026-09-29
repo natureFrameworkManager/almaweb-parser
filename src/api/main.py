@@ -66,8 +66,16 @@ app = FastAPI(
         "are combined with `AND`."
         "\n- **`sort` / `order`** accept a single column only; multi-level sorting has to be applied client-side."
         "\n- **Pagination** (`page` / `page_size`) is disabled unless both are supplied."
+        "\n\n### Data notes\n"
+        "- **Free-text fields keep the source line breaks.** Where AlmaWeb used a line break "
+        "(`<br>`), the stored text contains `\\n`; every line is whitespace-normalised. This applies to "
+        "module `goals`, `content`, `exam_prerequisites`, `literature`, `elective_prerequisites`, "
+        "`elective_classification`, `grading_note` and to course `official_description`, `organisational` "
+        "and `literature`.\n"
+        "- **`Module.prerequisites`** is a map keyed by study-programme context (or the generic key "
+        "`allgemein`); each value is the requirement text for that context."
     ),
-    version="1.2.0",
+    version="1.2.1",
     root_path=PROXY_ROOT_PATH
 )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, time
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from .shared import ReadSchema
 
@@ -155,7 +155,7 @@ class LocationRead(ReadSchema):
     id: int | None = None
     name: str | None = None
     external_id: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
     type: str | None = None
     seats: int | None = None
     size: float | None = None
@@ -277,6 +277,8 @@ class CourseRead(ReadSchema):
             "weekly_hours": 4,
             "language": "Deutsch",
             "status": 1,
+            "org_unit": "10-Institut für Informatik",
+            "organisational": "Zielgruppe: B.Sc. Informatik\nPrüfungsleistungen sind laut Prüfungsordnung zu erbringen.",
         }]},
     )
 
@@ -289,9 +291,9 @@ class CourseRead(ReadSchema):
     language: str | None = None
     status: int | StatusRead | None = None
     org_unit: str | None = None
-    official_description: str | None = None
-    organisational: str | None = None
-    literature: str | None = None
+    official_description: str | None = Field(default=None, description="Free text; see the top-level 'Data notes': may contain `\\n` line breaks.")
+    organisational: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
+    literature: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
     # Relationships (populated via ?include=)
     staff: list[StaffRead] | None = None
     semesters: list[SemesterRead] | None = None
@@ -341,31 +343,38 @@ class ModuleRead(ReadSchema):
             "duration_semesters": 1,
             "credits": 10.0,
             "frequency": "jedes Wintersemester",
-            "goals": "Grundlegende Kenntnisse über Algorithmen und Datenstrukturen",
+            "goals": "Grundlegende Kenntnisse über Algorithmen und Datenstrukturen\n- Sortierverfahren\n- Graphenalgorithmen",
             "content": "Sortieralgorithmen, Graphenalgorithmen, Bäume, Hashing",
             "exam_prerequisites": "Bestehen der Übungsaufgaben",
-            "prerequisites": {"mandatory": "Grundlagen der Programmierung"},
+            "prerequisites": {
+                "B.Sc. Informatik": "Grundlagen der Programmierung",
+                "allgemein": "keine"
+            },
             "faculty_id": 1,
-            "path": ["Root", "Informatik", "Informatik (Bachelor of Science)", "Pflichtmodule"],
+            "path": [["Root", "Informatik", "Informatik (Bachelor of Science)", "Pflichtmodule"]],
         }]},
     )
 
     id: int | None = None
     name: str | None = None
     number: str | None = None
-    language: str | None = None
+    language: str | None = Field(default=None, description="Deprecated: derived from the module's courses; prefer the course `language`.")
     duration_semesters: int | None = None
     credits: float | None = None
     frequency: str | None = None
-    goals: str | None = None
-    content: str | None = None
-    exam_prerequisites: str | None = None
-    prerequisites: dict[str, str] | None = None
-    literature: str | None = None
+    goals: str | None = Field(default=None, description="Free text; see the top-level 'Data notes': may contain `\\n` line breaks.")
+    content: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
+    exam_prerequisites: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
+    prerequisites: dict[str, str] | None = Field(
+        default=None,
+        description="Requirement text per study-programme context. Keys are the study-programme names from AlmaWeb "
+                    "(or the generic `allgemein`); values are the requirement text for that context.",
+    )
+    literature: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
     elective_course_count: int | None = None
-    elective_prerequisites: str | None = None
-    elective_classification: str | None = None
-    grading_note: str | None = None
+    elective_prerequisites: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
+    elective_classification: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
+    grading_note: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
     faculty_id: int | None = None
     path: list[list[str]] | None = None
     # Relationships (populated via ?include=)
