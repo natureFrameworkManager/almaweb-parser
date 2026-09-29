@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Course, Degree, Faculty, Module
-from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES
+from .shared import SessionDep, export_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES
 from schemas import PaginatedResponse, DegreeRead, ModuleRead, FacultyRead
 
 router = APIRouter(prefix="/degrees", tags=["Degrees"], responses=PROBLEM_RESPONSES)
@@ -100,12 +100,4 @@ def get_degree_distinct_field(
     export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all degrees."""
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(Degree, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(Degree, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, Degree, field_name, paging, export)

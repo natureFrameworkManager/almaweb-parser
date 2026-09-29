@@ -57,6 +57,10 @@ class ICalBusyStatus(str, Enum):
     busy_tentative = "BUSY-TENTATIVE"
     busy_unavailable = "BUSY-UNAVAILABLE"
 
+class ICalMapType(str, Enum):
+    module = "module"
+    course = "course"
+
 
 # ---------------------------------------------------------------------------
 # Model introspection helpers
@@ -445,15 +449,19 @@ def _serialize_with_projection(
 # ---------------------------------------------------------------------------
 
 def sort_parameters(model_class: type):
-    """Dependency: ``?sort=<column>&order=asc|desc``."""
+    """Dependency: ``?sort=<column>&order=asc|desc``.
+
+    The enum is a real :class:`enum.Enum` (not a plain ``str`` + ``enum=``), so
+    FastAPI rejects unknown columns with **422** instead of letting them reach
+    the SQL builder (where ordering by a relationship raised ``NotImplementedError``).
+    """
     SortField = model_field_enum(model_class, f"{model_class.__name__}SortField")
-    sort_values = [str(f.value) for f in SortField.__members__.values()]
 
     def _dep(
-        sort: str | None = Query(None, description="Column to sort by.", enum=sort_values),
+        sort: SortField | None = Query(None, description="Column to sort by."),
         order: SortOrder = Query(SortOrder.asc, description="Sort direction: asc or desc."),
     ):
-        return {"sort": sort, "order": order.value}
+        return {"sort": sort.value if sort is not None else None, "order": order.value}
 
     return _dep
 
@@ -501,7 +509,7 @@ def export_event_parameters(
     ical_title_format: str | None = Query(None, description="iCal SUMMARY template. Supports placeholders: {name}, {number}, {course_name}, {module_name}, {staff_names}, {location_name}, {building_name}, {course_number}, {module_number}, {course_type}. Overrides auto-title when set."),
     ical_location_format: str | None = Query(None, description="iCal LOCATION template. Same placeholders as ical_title_format."),
     ical_description_format: str | None = Query(None, description="iCal DESCRIPTION template. Same placeholders as ical_title_format."),
-    ical_reminder_minutes: list[int] | None = Query(None, ge=0, le=10080, description="Minutes before event for VALARM reminders. Repeatable for multiple reminders (e.g. ?ical_reminder_minutes=15&ical_reminder_minutes=60). Must be 0–10080 (1 week)."),
+    ical_reminder_minutes: list[Annotated[int, Query(ge=0, le=10080)]] | None = Query(None, description="Minutes before event for VALARM reminders. Repeatable for multiple reminders (e.g. ?ical_reminder_minutes=15&ical_reminder_minutes=60). Must be 0–10080 (1 week)."),
     ical_organizer: str | None = Query(None, description="ORGANIZER property value, e.g. 'MAILTO:registrar@uni-example.de'."),
     ical_categories: str | None = Query(None, description="CATEGORIES value. Supports placeholders. E.g. 'University,{course_type}'."),
     ical_filename: str = Query("events.ics", description="Filename for the Content-Disposition header."),
@@ -512,7 +520,7 @@ def export_event_parameters(
     ical_busy_status: ICalBusyStatus | None = Query(None, description="TRANSP property: FREE → TRANSPARENT, others → OPAQUE. Controls free/busy visibility in Outlook/Google Calendar."),
     ical_collapse_recurring: bool = Query(False, description="Collapse weekly-recurring events into a single VEVENT with RRULE:FREQ=WEEKLY. Requires courses to be included."),
     ical_map: str | None = Query(None, description="JSON object mapping event IDs to module/course IDs for per-event title override. E.g. '{\"42\":7,\"43\":7}'. See ical_map_type."),
-    ical_map_type: str | None = Query("module", description="Whether ical_map values are module IDs ('module') or course IDs ('course').", enum=["module", "course"]),
+    ical_map_type: ICalMapType | None = Query(ICalMapType.module, description="Whether ical_map values are module IDs ('module') or course IDs ('course')."),
     ical_multi_value_separator: str = Query(" / ", description="Separator used when joining multiple course/module names in placeholders."),
 ):
     # Validate timezone
@@ -545,7 +553,7 @@ def export_event_parameters(
         "ical_busy_status": ical_busy_status,
         "ical_collapse_recurring": ical_collapse_recurring,
         "ical_map": ical_map,
-        "ical_map_type": ical_map_type or "module",
+        "ical_map_type": ical_map_type.value if ical_map_type else "module",
         "ical_multi_value_separator": ical_multi_value_separator,
         "ical_event_titles_map": per_event_titles,
     }
@@ -561,14 +569,19 @@ def paging_parameters(
 def distinct_parameters(
     model_class: type,
 ):
+    """Dependency: ``?field=<column>&order=asc|desc`` for ``/…/distinct/fields``.
+
+    Uses a real :class:`enum.Enum` so that unknown/relationship field names are
+    rejected with **422** instead of raising ``AttributeError`` /
+    ``NotImplementedError`` inside the endpoint.
+    """
     DistinctField = model_field_enum(model_class, f"{model_class.__name__}DistinctField")
-    field_values = [str(f.value) for f in DistinctField.__members__.values()]
 
     def _dep(
-        field: str = Query(..., description="Column name.", enum=field_values),
+        field: DistinctField = Query(..., description="Column name."),
         order: SortOrder = Query(SortOrder.asc, description="Sort direction: asc or desc."),
     ):
-        return {"field": field, "order": order.value}
+        return {"field": field.value, "order": order.value}
 
     return _dep
 
@@ -592,10 +605,38 @@ def page_query(session: SessionDep, query, paging: dict):
 
 
 def sort_query(query, sorting: dict, model_class: type):
-    """Apply ``ORDER BY`` to *query* from the sorting parameter dict."""
-    if (field := sorting.get("sort")) and (col := getattr(model_class, field, None)):
-        return query.order_by(col.desc() if sorting.get("order") == "desc" else col.asc())
-    return query
+    """Apply ``ORDER BY`` to *query* from the sorting parameter dict.
+
+    Only real DB columns are accepted. Relationships have no ``asc()``/``desc()``
+    SQL operator, so an unexpected relationship name would raise
+    ``NotImplementedError`` (HTTP 500); such values are ignored here as a second
+    line of defence behind the :func:`sort_parameters` enum validation.
+    """
+    field = sorting.get("sort")
+    if not field:
+        return query
+    column = getattr(model_class, field, None)
+    if column is None or field not in _model_column_fields(model_class):
+        return query
+    return query.order_by(column.desc() if sorting.get("order") == "desc" else column.asc())
+
+
+def distinct_field_response(session: SessionDep, model_class: type, field_name: dict, paging: dict, export: dict):
+    """Shared implementation for every ``/…/distinct/fields`` endpoint.
+
+    Returns the distinct values of a single column as ``[{<field>: value}, …]``,
+    wrapped in the standard paginated list envelope.
+    """
+    field = field_name["field"]
+    order = field_name.get("order") or "asc"
+    column = getattr(model_class, field, None)
+    if column is None or field not in _model_column_fields(model_class):
+        raise HTTPException(status_code=422, detail=f"Invalid distinct field: {field}")
+    query = select(column).distinct()
+    query = query.order_by(column.asc() if order.lower() == "asc" else column.desc())
+    data, query = page_query(session, query, paging)
+    items = [{field: value} for value in session.exec(query).all()]
+    return build_list_response(data, items, export)
 
 
 def filter_query(session: SessionDep, query, filtering: dict, model_class: type, including: dict | None = None):

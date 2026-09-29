@@ -51,7 +51,22 @@ app = FastAPI(
     lifespan=lifespan,
     title="AlmaWeb API",
     summary="Parsed data from AlmaWeb in a structured format",
-    description="API for accessing parsed data from AlmaWeb, which includes modules, courses, and events. Faster and more convenient than navigating the large website tree directly, with additional filtering and querying capabilities.",
+    description=(
+        "API for accessing parsed data from AlmaWeb, which includes modules, courses, and events. "
+        "Faster and more convenient than navigating the large website tree directly, with additional "
+        "filtering and querying capabilities."
+        "\n\n### Query parameter conventions\n"
+        "- **Unknown parameters are ignored.** Only the parameters listed for an endpoint have an effect; "
+        "any other query parameter is silently dropped and does not change the result. Always rely on the "
+        "per-endpoint parameter list in this schema."
+        "\n- **Unimplemented parameters** are documented as `NOT IMPLEMENTED` in their description: they are "
+        "accepted for forward compatibility but currently match nothing because the underlying data is not "
+        "populated by the parser."
+        "\n- **Repeated parameters** (`?id=1&id=2`) are combined with `OR` inside one filter; different filters "
+        "are combined with `AND`."
+        "\n- **`sort` / `order`** accept a single column only; multi-level sorting has to be applied client-side."
+        "\n- **Pagination** (`page` / `page_size`) is disabled unless both are supplied."
+    ),
     version="1.0.3",
     root_path=PROXY_ROOT_PATH
 )

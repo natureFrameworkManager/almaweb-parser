@@ -6,12 +6,51 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Module, Course, Event, Staff, Degree, Semester
-from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
+from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES, _ical_augment_including
 from .events import parse_iso_date
 from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead
 
 
 router = APIRouter(prefix="/modules", tags=["Modules"], responses=PROBLEM_RESPONSES)
+
+
+# ---------------------------------------------------------------------------
+# JSON path helpers
+#
+# ``Module.path`` is stored as JSON (SQLite text): a list of navigation paths,
+# each of which is itself a list of ordered segments, e.g.
+#   [["Root", "SoSe 2025", "10 - Fakultät für Mathematik und Informatik", "…"]]
+# Filtering therefore has to flatten one JSON level (``json_each``) before the
+# individual segments can be compared.
+# ---------------------------------------------------------------------------
+
+def _module_path_segment_condition(value: str):
+    """SQL predicate: the module has at least one path containing *value* as a segment."""
+    paths = func.json_each(Module.path).table_valued("value").alias("module_paths")
+    segments = func.json_each(paths.c.value).table_valued("value").alias("module_path_segments")
+    return (
+        select(1)
+        .select_from(paths)
+        .where(select(1).select_from(segments).where(segments.c.value == value).exists())
+        .exists()
+    )
+
+
+def _module_path_prefix_condition(segments: list[str]):
+    """SQL predicate: at least one path starts with *segments* in the given order."""
+    paths = func.json_each(Module.path).table_valued("value").alias("module_path_prefixes")
+    checks = []
+    for index, segment in enumerate(segments):
+        alias = f"module_path_prefix_segment_{index}"
+        position = func.json_each(paths.c.value).table_valued("key", "value").alias(alias)
+        checks.append(
+            select(1)
+            .select_from(position)
+            .where(position.c.key == index)
+            .where(position.c.value == segment)
+            .exists()
+        )
+    return select(1).select_from(paths).where(*checks).exists()
 
 
 @router.get("", summary="List all modules", response_model=PaginatedResponse[ModuleRead], response_model_exclude_unset=True)
@@ -25,7 +64,7 @@ def get_modules(
     id: list[int] | None = Query(None, description="Module ID values (repeatable; OR within this filter)."),
     name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
-    language: list[str] | None = Query(None, description="Module language values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    language: list[str] | None = Query(None, description="Module language values (repeatable; case-insensitive, partial match; OR within this filter). NOT IMPLEMENTED: the parser does not populate `Module.language` yet, so this filter currently matches no rows."),
     frequency: list[str] | None = Query(None, description="Frequency values (repeatable; case-insensitive, partial match; OR within this filter)."),
     credits_min: int | None = Query(None, description="Minimum credits for the module"),
     credits_max: int | None = Query(None, description="Maximum credits for the module"),
@@ -44,6 +83,8 @@ def get_modules(
     has_courses: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any courses."),
     has_events: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any events in their courses."),
     has_staff: bool | None = Query(None, description="Filter modules that have (true) or do not have (false) any staff assigned to them."),
+    path: list[str] | None = Query(None, description="Path segment values (repeatable; exact segment match; OR within this filter). Matches modules with at least one navigation path containing the given segment, e.g. \"Informatik\" or \"Pflichtmodule\"."),
+    path_prefix: str | None = Query(None, description="Exact navigation path prefix written as '/'-separated segments, e.g. \"Root/SoSe 2025/10 - Fakultät für Mathematik und Informatik\". Matches modules whose path starts with these segments in order."),
 ):
     """
     Retrieve a list of all modules
@@ -100,6 +141,12 @@ def get_modules(
     if has_staff is not None:
         staff_exist = Module.responsible_persons.any()  # type: ignore
         query = query.where(staff_exist if has_staff else ~staff_exist)
+    if path:
+        query = query.where(or_(*[_module_path_segment_condition(value) for value in path]))
+    if path_prefix:
+        prefix_segments = [segment for segment in path_prefix.split("/") if segment]
+        if prefix_segments:
+            query = query.where(_module_path_prefix_condition(prefix_segments))
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
@@ -155,7 +202,7 @@ def get_module_events(
     exports: Annotated[dict, Depends(export_event_parameters)],
     date_from: str | None = Query(None, description="Filter events that occur on or after this date (YYYY-MM-DD, inclusive)."),
     date_to: str | None = Query(None, description="Filter events that occur on or before this date (YYYY-MM-DD, inclusive)."),
-    weekday: list[int] | None = Query(None, description="Filter events that occur on these weekdays (0=Monday, 6=Sunday). Repeatable for multiple days."),
+    weekday: list[Annotated[int, Query(ge=0, le=6)]] | None = Query(None, description="Filter events that occur on these weekdays (0=Monday, 6=Sunday). Repeatable for multiple days."),
 ):
     """
     Retrieve a module events.
@@ -225,12 +272,4 @@ def get_distinct_module_field(
     """
     Retrieve distinct values for a module field.
     """
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(Module, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(Module, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, Module, field_name, paging, export)

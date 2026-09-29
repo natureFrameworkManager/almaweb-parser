@@ -27,7 +27,7 @@ def get_weekly_schedule(
     staff_ids: list[int] | None = Query(None, description="Filter schedule by staff IDs (repeatable; OR within this filter)."),
     location_ids: list[int] | None = Query(None, description="Filter schedule by location IDs (repeatable; OR within this filter)."),
     building_ids: list[int] | None = Query(None, description="Filter schedule by building IDs (repeatable; OR within this filter)."),
-    weekdays: list[int] | None = Query(None, description="Filter schedule by weekday IDs (0=Monday, 6=Sunday; repeatable; OR within this filter)."),
+    weekdays: list[Annotated[int, Query(ge=0, le=6)]] | None = Query(None, description="Filter schedule by weekday IDs (0=Monday, 6=Sunday; repeatable; OR within this filter)."),
     split_by_day: bool = Query(False, description="Whether to split the schedule by day of the week in the response."),
 ):
     """Retrieve a generic weekly schedule.
@@ -118,9 +118,11 @@ def get_weekly_schedule(
     query = select(Event).where(Event.id.in_(dedup_q))  # type: ignore[union-attr]
 
     data, query = page_query(session, query, paging)
-    query = sort_query(query, sorting, Event)
+    # `split_by_day` must be the PRIMARY sort so the response really is grouped by
+    # day; a user-supplied `sort` then only breaks ties within a weekday.
     if split_by_day:
         query = query.order_by(weekday_col)
+    query = sort_query(query, sorting, Event)
 
     # Ensure event_date is present in the serialized output so weekday can be derived
     fielding_inner = dict(fielding)

@@ -46,11 +46,33 @@ The crawler walks the full module tree, parses each module and its courses (incl
 Interactive documentation is available at `http://localhost:8000/docs` once the server is running.
 
 All collection endpoints support:
-- **Paging** - `offset` and `limit`
-- **Sorting** - `sort` with field name, prefix `-` for descending
+- **Paging** - `page` and `page_size` (pagination is disabled unless both are supplied)
+- **Sorting** - `sort` with a column name and `order=asc|desc`
 - **Field selection** - `fields` to return only specific columns
 - **Relation includes** - `include` to embed related entities (e.g. `include=courses.modules`)
 - **Export formats** - `format=json` (default), `format=csv`, and `format=ical` on event endpoints
+
+### Query parameter conventions
+
+- **Unknown parameters are ignored.** Only the parameters documented for an endpoint have an effect;
+  any other query parameter is silently dropped (FastAPI behaviour). A parameter that exists on one
+  resource does not necessarily exist on another — for example `/exams` accepts `staff_id` and
+  `semester_id` but **not** `building_id`.
+- **Repeated parameters** (`?id=1&id=2`) are combined with `OR` inside one filter; different filters
+  are combined with `AND`.
+- **`sort` / `order`** accept a single column only. Multi-level sorting has to be applied client-side
+  (the client sends the primary level and sorts the remaining levels itself).
+- **Invalid values return `422`** with an RFC 9457 problem document; malformed dates/times return `400`.
+
+### Known limitations
+
+- `/modules?language=…` — `Module.language` is never populated by the parser, so this filter currently
+  matches nothing. The parameter is kept for forward compatibility and its schema description is marked
+  `NOT IMPLEMENTED`.
+- `/exams?building_id=…` — **not available.** Exam records carry no room/building attribution in the
+  source data, so `/exams` intentionally offers no `building_id` filter. Use `/events?building_id=…`
+  (optionally combined with `module_id` / `course_id`) to find the rooms where the matching courses
+  are taught.
 
 ### iCal Export
 
@@ -76,6 +98,7 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 - [ ] Handle event times from 00:00 to 24:00 currently error if hour outside of 0-23 range [src/parser/course_parser.py](src/parser/course_parser.py)
 - [x] Handle semesters across effected datatypes correctly. Modules are as a link not sufficient for the linking. [src/parser/module_parser.py](src/parser/module_parser.py)
 - [x] Apply the semester-id filters correctly to all data types. [src/api/routers/modules.py](src/api/routers/modules.py), [src/api/routers/courses.py](src/api/routers/courses.py), [src/api/routers/events.py](src/api/routers/events.py)
+- [x] Fix and document all API query parameters (500s, silent no-ops, invalid values). See [TODO.md](TODO.md) "Query-parameter audit"
 
 ## Future Ideas
 
@@ -87,9 +110,9 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 - [ ] Resume from the last successful point instead of starting over if the crawler exits halfway
 
 ### API — Filters
-- [ ] Modules: filter by specific `path` segments or exact path prefixes instead of only free-text search
+- [x] Modules: filter by specific `path` segments or exact path prefixes instead of only free-text search
 - [x] Courses: filter by exact staff members within the parsed `staff` list
-- [ ] Events: filter by exact staff members within the parsed event `staff` list
+- [x] Events: filter by exact staff members within the parsed event `staff` list
 - [x] Events: add normalized location filters to distinguish building, room, and free-text notes
 
 ### API — Endpoints

@@ -102,21 +102,23 @@ Navigation links are only followed when the name starts with `"10 - Fakultät f�
 
 ---
 
-### 12. Several declared query params in `/modules` are never applied
+### ✅ 12. Several declared query params in `/modules` are never applied
 **File:** `src/api/routers/modules.py`  
-The following parameters are accepted by the endpoint but never translated into `WHERE` clauses: `id`, `language`, `degree_id`, `faculty_id`, `semester_id`, `course_id`, `has_courses`, `has_events`, `has_staff`.
+**Fixed:** every declared filter is now translated into a `WHERE` clause — `id`, `language`, `degree_id`, `faculty_id`, `semester_id`, `course_id`, `staff_id`, `responsible_person`, `start_semester`, `has_courses`, `has_events`, `has_staff`. Note that `language` is still a no-op *in practice* because the underlying column is never populated (see #14); its parameter description is now explicitly marked `NOT IMPLEMENTED` so the OpenAPI docs do not advertise behaviour that cannot work yet.
 
 ---
 
-### 13. `accessible` filter parameter declared but never applied
+### ✅ 13. `accessible` filter parameter declared but never applied
 **File:** `src/api/routers/locations.py`  
-`accessible: bool | None` is a declared query parameter but no corresponding `query = query.where(...)` is ever added, so the filter has no effect.
+**Fixed:** the filter is applied **and** now matches the right token. It previously looked for `%barrierefrei%`, but the parser stores `accessibility` as `"Ja"` / `"Nein"` / `""`, so `accessible=true` returned **0** rows and `accessible=false` returned **all 758**. The predicate now accepts `"ja"` as well as the legacy German `"barrierefrei"` text (excluding `"nicht …"`), yielding **145** accessible / **613** not-accessible-or-unknown.
 
 ---
 
 ### 14. Module `language` field never parsed or stored
 **Files:** `src/parser/types.py`, `src/parser/module_parser.py`  
 `ModuleType` has no `language` key and `_LABEL_MAP` has no entry for it, so the database `Module.language` column always stays empty even though AlmaWeb exposes the teaching language on the module detail page.
+
+**Impact on the API:** `/modules?language=…` therefore matches no rows with the current data. The query parameter is still accepted (it will work once the column is populated) but its OpenAPI description is now explicitly marked `NOT IMPLEMENTED` in `src/api/routers/modules.py`.
 
 ---
 
@@ -126,15 +128,15 @@ The following parameters are accepted by the endpoint but never translated into 
 
 ---
 
-### 21. `split_by_day` ordering is appended after user sort instead of taking priority
+### ✅ 21. `split_by_day` ordering is appended after user sort instead of taking priority
 **File:** `src/api/routers/schedule.py`  
-When `split_by_day=True`, `query.order_by(weekday_col)` is added *after* the user-specified `sort_query`. The weekday becomes a tiebreaker instead of the primary sort, so the response is not actually split by day as the parameter name suggests.
+**Fixed:** the `ORDER BY` for `weekday_col` is now applied *before* `sort_query()`, so a weekday sort is primary and the user-supplied `sort` only breaks ties within a day. Verified: `/schedule/weekly?page_size=20&split_by_day=true` returns a non-decreasing weekday sequence, also when combined with `&sort=location_id&order=desc`.
 
 ---
 
-### 22. `weekday` filter documentation inconsistency between `/events` and `/schedule/weekly`
+### ✅ 22. `weekday` filter documentation inconsistency between `/events` and `/schedule/weekly`
 **File:** `src/api/routers/events.py`  
-The `weekday` parameter description on `/events` says `"0=Sunday, 1=Monday, …, 6=Saturday"`, but the conversion `(day + 1) % 7` treats `0` as Monday — the same convention used (and correctly documented) in `/schedule/weekly`. The doc string for `/events` is wrong, causing the filter to behave differently from what the API documentation states.
+**Fixed:** the `/events` `weekday` description now documents the API convention `0=Monday … 6=Sunday`, matching the `(day + 1) % 7` conversion and `/schedule/weekly`. Additionally `weekday` is now bounded with `ge=0, le=6` on **every** event endpoint that accepts it — `/events`, `/modules/{id}/events` (previously unbounded, so `weekday=7` silently wrapped to Monday) and `weekdays` on `/schedule/weekly` (same wrap). Out-of-range values now return **422**.
 
 ---
 
@@ -149,32 +151,169 @@ The `sort` parameter is a scalar string on every endpoint (`/modules`, `/courses
 
 ---
 
-### 24. Courses: staff is not resolved to IDs → instructor filter disabled
+### ✅ 24. Courses: staff is not resolved to IDs → instructor filter disabled
 
 **File:** `src/api/routers/courses.py` (`get_courses`)  
 `/courses` only exposes a **name-based** `staff` filter (`{"type":"string", "description":"…partial match"}`), while the UI filter (`#filter-instructors`) supplies staff **IDs**. The client's `getCourses` has its `staff_id` block commented out with the note `// Currently staff is not resolved to IDs -> bug API` (`ts/api/api.ts:245`), so the instructor filter is effectively disabled.
 
-- Live proof: `/courses?page_size=1` → count **3255**; `/courses?page_size=1&staff_id=7` → count **3255** (unchanged → ignored).
+- **Fixed:** `/courses` now exposes `staff_id` (repeatable, OR within the filter) alongside the name-based `staff` filter, so the client-side `staff_id` block can be re-enabled. Live proof: `/courses?page_size=1` → **9562**; `&staff_id=1` → **9** (filter is applied).
 
 ---
 
-### 25. Exams: `building_id`, `staff_id` and `semester_id` filters are silently ignored
+### ✅ 25. Exams: `building_id`, `staff_id` and `semester_id` filters are silently ignored
 
 **File:** `src/api/routers/exams.py` (`get_exams`)  
-The exam filter UI (`#filter-group-exam`) offers Gebäude (`#filter-buildings`), Prüfer (`#filter-staff`) and the global semester list, and `fetchExamPage` sends all three, but `/exams` accepts **none** of them (it only has a name-based `staff` filter). The client sends the params anyway, so there is no workaround in place — the filters are simply ineffective.
+**Originally:** the exam filter UI (`#filter-group-exam`) offers Gebäude (`#filter-buildings`), Prüfer (`#filter-staff`) and the global semester list, and `fetchExamPage` sends all three, but `/exams` accepted **none** of them (it only had a name-based `staff` filter), so those filters were simply ineffective.
 
-- Live proof (`/exams?page_size=1` baseline = **2663**):
-  - `&building_id=1` → **2663** (ignored)
-  - `&staff_id=7` → **2663** (ignored)
-  - `&semester_id=1` → **2663** (ignored)
-  - `&required=true` → **2461** (works — so the probe is valid)
+- Live proof: `/exams?page_size=1` baseline = **7130**.
+- **`staff_id` and `semester_id` are implemented:** `&staff_id=1` → **1**, `&semester_id=1` → **2385** (both narrow the result).
+- **`building_id` is marked as _data not available_ instead of being implemented:** exam records carry no room/building attribution in the source data, so there is no meaningful `building_id` filter for `/exams`. The endpoint docstring in `src/api/routers/exams.py` now states this explicitly, and clients are pointed at `/events?building_id=…` (optionally with `module_id`/`course_id`) to locate the rooms where the matching courses are taught. A `building_id` sent by the UI is still ignored (see #27).
 
 ---
 
-### 26. Events: `building_id` is a scalar, so multiple buildings cannot be OR-ed
+### ✅ 26. Events: `building_id` is a scalar, so multiple buildings cannot be OR-ed
 
 **File:** `src/api/routers/events.py` (`get_events`)  
 `getEvents` is typed `building?: number | number[]` and appends `building_id` repeatedly (`ts/api/api.ts:322-328`), but `/events` declares `building_id` as a single integer (`building_id: int | None`). Repeated scalar params are **last-value-wins**, not OR.
 
-- Live proof: `building_id=2` → **3880**; `building_id=1&building_id=2` → **3880** (took the last = 2); `building_id=2&building_id=1` → **5281** (took the last = 1).
-- **Latent only:** the events UI uses a single `<select>`, so it never sends more than one building. This is also inconsistent with the already-repeatable `location_ids` / `building_ids` list params on `/schedule/*`.
+- **Fixed:** `/events` declares `building_id: list[int]`, i.e. it is repeatable and OR-ed, consistent with `location_ids`/`building_ids` on `/schedule/*`. Live proof: `building_id=1` → **3566**; `building_id=2` → **13151**; `building_id=1&building_id=2` → **16717** (= union, independent of argument order).
+
+---
+
+## Query-parameter audit (API contract pass)
+
+Audit of every `Query(...)` parameter on every list endpoint, run against a production
+copy of `database.db`. Each item below was reproduced live and is now fixed or
+explicitly documented.
+
+### ✅ 27. Unknown query parameters are silently ignored → now documented
+
+FastAPI silently drops parameters an endpoint does not declare (e.g. `building_id` and
+`course_id` on `/exams`, `faculty_id` on `/courses`, `type` on `/modules`), so a client
+cannot tell a typo from an ignored filter. This is inherent framework behaviour and was
+kept, but it is now stated in the OpenAPI **app description** (`src/api/main.py`) together
+with the other parameter conventions:
+
+- unknown parameters have no effect — rely on the per-endpoint parameter list;
+- parameters marked `NOT IMPLEMENTED` match nothing because the data is not populated;
+- repeated parameters are OR-ed inside one filter, different filters are AND-ed;
+- `sort`/`order` support a single column only;
+- pagination requires both `page` and `page_size`.
+
+`/exams` additionally documents in its docstring that `building_id` is not available
+(see #25).
+
+### ✅ 28. `ical_reminder_minutes` returned HTTP 500 for every value
+
+**File:** `src/api/routers/shared.py` (`export_event_parameters`)
+
+`list[int] | None = Query(None, ge=0, le=10080, …)` applied the `ge`/`le` constraint to
+the **list** instead of its items, so Pydantic raised
+`TypeError: Unable to apply constraint 'ge' to supplied value [15]` and **every** event
+endpoint (13 of them) returned 500 whenever the parameter was supplied — single value
+included, and even without `format=ical`.
+
+**Fixed** by validating per item: `list[Annotated[int, Query(ge=0, le=10080)]] | None`.
+Verified: `?ical_reminder_minutes=15` → 200, `?…=15&…=60` → 200, `?…=-1` / `?…=99999`
+→ 422.
+
+### ✅ 29. `sort` was not validated → HTTP 500 when a relationship name was passed
+
+**File:** `src/api/routers/shared.py` (`sort_parameters`, `sort_query`)
+
+`sort` was declared as a plain `str` with an `enum=[…]` list. FastAPI only *documents*
+an enum passed this way — it does not validate it — so any value reached `sort_query()`,
+where `getattr(Model, <relationship>).asc()` raised
+`NotImplementedError: asc_op` and the request failed with **500** on every list endpoint
+(`/courses?sort=events`, `/modules?sort=degrees`, `/events?sort=courses`,
+`/exams?sort=module`, `/staff?sort=modules`, `/locations?sort=building`,
+`/schedule/weekly?sort=location`, `/modules/{id}/events?sort=location`, …). An
+unknowable value such as `?sort=bogus` was silently ignored instead of rejected.
+
+**Fixed** by annotating the parameter with the real `Enum` type (`SortField`) and by
+making `sort_query()` ignore anything that is not an actual DB column as a second line of
+defence. Verified: `?sort=events` → **422**, `?sort=bogus` → **422**,
+`?sort=name&order=desc` → 200.
+
+### ✅ 30. `/…/distinct/fields?field=…` returned HTTP 500
+
+**Files:** `src/api/routers/shared.py` (`distinct_parameters`), all 10 `/distinct/fields` endpoints
+
+Same root cause as #29: `field` was a plain `str` + `enum=`, so
+`?field=events` (relationship) raised `NotImplementedError: asc_op` and `?field=bogus`
+raised `AttributeError: bogus` — both surfacing as **500**.
+
+**Fixed** by using the `DistinctField` enum type for validation and by moving the ten
+duplicated handler bodies into a single shared `distinct_field_response()` helper that
+rejects non-column fields with **422** and orders by the requested column. Verified:
+`?field=name` → 200, `?field=events` → 422, `?field=bogus` → 422, `?field=path` (JSON
+column) → 200.
+
+### ✅ 31. `ical_map_type` accepted arbitrary values
+
+**File:** `src/api/routers/shared.py` (`export_event_parameters`)
+
+Declared as `str` + `enum=["module", "course"]`, so `?ical_map_type=bogus` was accepted
+(200) and fell through to the default branch. **Fixed** with a real `ICalMapType` enum —
+invalid values now return **422**.
+
+### ✅ 32. `path` and `path_prefix` filters added to `/modules`
+
+**File:** `src/api/routers/modules.py`
+
+The README ToDo *"Modules: filter by specific `path` segments or exact path prefixes"*
+is now implemented:
+
+- `path` (repeatable, OR within the filter) — matches modules with at least one stored
+  navigation path containing the given segment, e.g. `?path=Informatik`.
+- `path_prefix` — exact path prefix as `/`-separated segments, e.g.
+  `?path_prefix=Root/SoSe 2025/10 - Fakultät für Mathematik und Informatik`.
+
+`Module.path` is JSON-encoded as a **list of paths, each a list of ordered segments**, so
+both filters are implemented with SQLite `json_each` predicates that flatten one level
+(and therefore also decode `\uXXXX` escapes correctly, unlike a plain `LIKE` on the raw
+text). Verified: `?path=Informatik` → **172**, `?path=Modulübersichten` → **27**,
+`?path_prefix=Root/SoSe 2025` → **718**, `?path=Informatik&path=Philosophie` → **184**.
+
+### ✅ 33. `staff` and `staff_id` filters added to `/events`
+
+**File:** `src/api/routers/events.py`
+
+The README ToDo *"Events: filter by exact staff members within the parsed event `staff`
+list"* is now implemented on **all seven** event-list endpoints (`/events`, `/today`,
+`/tomorrow`, `/week`, `/day/{date}`, `/week/{date}`, `/month/{date}`):
+
+- `staff` (repeatable; case-insensitive partial match on `Staff.name`; OR within the filter)
+- `staff_id` (repeatable; exact `Staff.id`; OR within the filter)
+
+Verified: `/events?staff_id=1` → **57** and `/events?staff=Deeg` → **57** (baseline
+158848); `/events/week/2025-10-20?staff_id=1` → **3** (baseline 2987);
+`/events/month/2025-10-20?staff_id=1` → **8** (baseline 8457);
+`/events?staff_id=1&course_id=1` → **16** (filters AND-ed).
+
+
+### ✅ 34. `/events/{event_id}/location` returned HTTP 500 for events without a room
+
+**File:** `src/api/routers/events.py` (`get_event_location`)
+
+Found while smoke-testing every endpoint after the parameter fixes. The handler returns
+`items[0] if items else None`, but the route declared `response_model=LocationRead`
+(non-optional), so FastAPI raised
+`ResponseValidationError: Input should be a valid dictionary or object to extract fields from`
+— a **500** — for every event whose `location_id` is `NULL`. That is **1264 / 158848**
+events in the production data set (`/events/6437/location` reproduced it).
+
+**Fixed** by declaring `response_model=LocationRead | None` and documenting that `null`
+(HTTP 200) is returned when the event has no location. The same latent pattern in
+`/locations/{location_id}/building` (declared `BuildingRead`, returns `None`) was fixed
+the same way; it does not currently trigger because no location in the data set lacks a
+building.
+
+### ✅ 35. `/…/distinct/fields` required `field` but that was only visible via a 422
+
+**File:** all `/…/distinct/fields` endpoints
+
+Not a bug as such, but recorded for the API contract: `field` is a **required** parameter
+(omitting it returns `422 query.field: Field required`). This is now consistent across all
+ten `distinct/fields` endpoints after the shared-helper refactor in #30.
+

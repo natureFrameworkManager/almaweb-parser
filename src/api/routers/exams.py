@@ -7,7 +7,7 @@ from sqlalchemy import func, or_
 from sqlmodel import select
 
 from database.model import Course, Event, Module, Staff, ModuleExam, Semester
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, ExamRead, CourseRead, EventRead, ModuleRead, StaffRead
 from .events import parse_iso_date, parse_hhmm_time
 
@@ -40,6 +40,11 @@ def get_exams(
 ):
     """
     Retrieve a list of all exams
+
+    **Building filtering is not available.** Exam records carry no room or building
+    attribution in the source data, so `/exams` intentionally offers no `building_id`
+    parameter; a `building_id` supplied by a client is ignored (see the API
+    description for the general unknown-parameter rule). 
     """
     # Base query: select only ModuleExam rows
     query = select(ModuleExam)
@@ -144,12 +149,4 @@ def get_exam_distinct_field(
     export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all exams."""
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(ModuleExam, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(ModuleExam, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, ModuleExam, field_name, paging, export)

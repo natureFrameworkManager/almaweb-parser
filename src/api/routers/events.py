@@ -3,13 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import select
 from datetime import date, time, timedelta
 import re
 
 from database.model import Event, Course, Module, Staff, Location, Semester, Building, EventType
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, EventRead, CourseRead, ModuleRead, StaffRead, LocationRead
 
 router = APIRouter(prefix="/events", tags=["Events"], responses=PROBLEM_RESPONSES)
@@ -62,6 +62,8 @@ def get_events(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
     semester_id: list[int] | None = Query(None, description="Semester IDs the event occurs in (repeatable; OR within this filter). Uses the event's semester links, not the module start semester."),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """
     Retrieve a list of all events
@@ -122,6 +124,10 @@ def get_events(
     if semester_id:
         # Events that occur in any of the given semesters (EventSemesterLink).
         query = query.where(Event.semesters.any(Semester.id.in_(semester_id)))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
 
     # Fix 4: resolve filter context names for iCal title auto-detection
     ical_exports = dict(exports)
@@ -154,6 +160,8 @@ def get_todays_events(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """Retrieve a list of events occurring today."""
     today = date.today()
@@ -166,6 +174,10 @@ def get_todays_events(
         query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
     if course_name:
         query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     ical_exports = dict(export)
     if module_id is not None:
         mod = session.get(Module, module_id)
@@ -195,6 +207,8 @@ def get_tomorrows_events(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """Retrieve a list of events occurring tomorrow."""
     tomorrow = date.today() + timedelta(days=1)
@@ -207,6 +221,10 @@ def get_tomorrows_events(
         query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
     if course_name:
         query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     ical_exports = dict(export)
     if module_id is not None:
         mod = session.get(Module, module_id)
@@ -236,6 +254,8 @@ def get_weeks_events(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """Retrieve a list of events occurring in the current week (Monday to Sunday)."""
     today = date.today()
@@ -250,6 +270,10 @@ def get_weeks_events(
         query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
     if course_name:
         query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     ical_exports = dict(export)
     if module_id is not None:
         mod = session.get(Module, module_id)
@@ -280,6 +304,8 @@ def get_events_by_date(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """Retrieve a list of events occurring on a specific date."""
     query = select(Event).where(Event.event_date == date)
@@ -291,6 +317,10 @@ def get_events_by_date(
         query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
     if course_name:
         query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     ical_exports = dict(export)
     if module_id is not None:
         mod = session.get(Module, module_id)
@@ -321,6 +351,8 @@ def get_events_by_week(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """Retrieve a list of events occurring in the week of a specific date (Monday to Sunday)."""
     start_of_week = date - timedelta(days=date.weekday())  # Monday
@@ -334,6 +366,10 @@ def get_events_by_week(
         query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
     if course_name:
         query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     ical_exports = dict(export)
     if module_id is not None:
         mod = session.get(Module, module_id)
@@ -364,6 +400,8 @@ def get_events_by_month(
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
+    staff: list[str] | None = Query(None, description="Event staff name values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs teaching the event (repeatable; OR within this filter)."),
 ):
     """Retrieve a list of events occurring in the month of a specific date."""
     start_of_month = date.replace(day=1)
@@ -380,6 +418,10 @@ def get_events_by_month(
         query = query.where(Event.courses.any(Course.id == course_id))  # type: ignore
     if course_name:
         query = query.where(Event.courses.any(Course.name.ilike(f"%{course_name}%")))  # type: ignore
+    if staff:
+        query = query.where(or_(*[Event.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff]))  # type: ignore
+    if staff_id:
+        query = query.where(Event.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     ical_exports = dict(export)
     if module_id is not None:
         mod = session.get(Module, module_id)
@@ -465,7 +507,7 @@ def get_event_staff(
     items = filter_query(session, query, fielding, Staff, including)
     return build_list_response(data, items, export)
 
-@router.get("/{event_id}/location", summary="Get location for an event", response_model=LocationRead, response_model_exclude_unset=True)
+@router.get("/{event_id}/location", summary="Get location for an event", response_model=LocationRead | None, response_model_exclude_unset=True)
 def get_event_location(
     session: SessionDep,
     event_id: int,
@@ -486,12 +528,4 @@ def get_event_distinct_field(
     export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve a list of distinct values for a specified event field."""
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(Event, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(Event, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, Event, field_name, paging, export)

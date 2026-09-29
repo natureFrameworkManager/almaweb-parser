@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import or_
 
 from database.model import Semester, Event, Course, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, SemesterRead, EventRead, CourseRead, ModuleRead
 
 router = APIRouter(prefix="/semesters", tags=["Semesters"], responses=PROBLEM_RESPONSES)
@@ -110,12 +110,4 @@ def get_semester_distinct_field(
     export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all semesters."""
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(Semester, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(Semester, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, Semester, field_name, paging, export)

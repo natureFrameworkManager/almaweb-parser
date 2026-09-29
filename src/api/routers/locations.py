@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy import func, or_
 
 from database.model import Location, Building, Event, Module
-from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
+from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, distinct_field_response, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, LocationRead, BuildingRead, EventRead
 
 location_router = APIRouter(prefix="/locations", tags=["Locations"], responses=PROBLEM_RESPONSES)
@@ -51,10 +51,13 @@ def get_locations(
     if size_max is not None:
         query = query.where(Location.size <= size_max) # type: ignore
     if accessible is not None:
-        # Location.accessibility holds the raw German "Barrierefrei" text; match
-        # "barrierefrei" unless it is negated (e.g. "nicht barrierefrei").
-        acc = func.lower(Location.accessibility)
-        is_accessible = acc.like("%barrierefrei%") & ~acc.like("%nicht%")
+        # `accessibility` stores the source "Barrierefrei" value. The parser
+        # normalises it to "Ja" / "Nein" (empty when unknown), while older or
+        # alternative exports keep the raw German text ("barrierefrei" /
+        # "nicht barrierefrei"); accept both spellings. `false` therefore also
+        # covers unknown values, matching the documented behaviour above.
+        acc = func.lower(func.trim(Location.accessibility))
+        is_accessible = (acc == "ja") | (acc.like("%barrierefrei%") & ~acc.like("%nicht%"))
         query = query.where(is_accessible if accessible else ~is_accessible)
     if building_ids:
         query = query.where(or_(*[Location.building_id == value for value in building_ids])) # type: ignore
@@ -101,7 +104,7 @@ def get_location_events(
     items = filter_query(session, query, fielding, Event, ical_including)
     return build_event_list_response(session, data, items, export)
 
-@location_router.get("/{location_id}/building", summary="Get building details for a location", response_model=BuildingRead, response_model_exclude_unset=True)
+@location_router.get("/{location_id}/building", summary="Get building details for a location", response_model=BuildingRead | None, response_model_exclude_unset=True)
 def get_location_building(
     session: SessionDep,
     sorting: Annotated[dict, Depends(sort_parameters(Building))],
@@ -111,7 +114,10 @@ def get_location_building(
     export: Annotated[dict, Depends(export_parameters)],
     location_id: int,
 ):
-    """Retrieve building details for a specific location."""
+    """Retrieve building details for a specific location.
+
+    Returns `null` (HTTP 200) when the location has no building assigned.
+    """
     query = select(Building).where(Building.locations.any(Location.id == location_id))  # type: ignore
     items = filter_query(session, query, fielding, Building, including)
     return items[0] if items else None
@@ -124,15 +130,7 @@ def get_location_distinct_field(
     export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all locations."""
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(Location, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(Location, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, Location, field_name, paging, export)
 
 
 room_router = APIRouter(prefix="/buildings", tags=["Buildings"], responses=PROBLEM_RESPONSES)
@@ -209,12 +207,4 @@ def get_building_distinct_field(
     export: Annotated[dict, Depends(export_parameters)],
 ):
     """Retrieve distinct values for a specific field across all buildings."""
-    field = field_name.get("field")
-    order = field_name.get("order")
-    query = select(getattr(Building, field)).distinct()  # type: ignore
-    if order:
-        sort_column = getattr(Building, field)  # type: ignore
-        query = query.order_by(sort_column.asc() if order.lower() == "asc" else sort_column.desc())
-    data, query = page_query(session, query, paging)
-    items = [{field: value} for value in session.exec(query).all()]
-    return build_list_response(data, items, export)
+    return distinct_field_response(session, Building, field_name, paging, export)
