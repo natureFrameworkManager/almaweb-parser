@@ -7,11 +7,11 @@ from bs4 import BeautifulSoup, Tag
 import httpx
 
 try:
-    from .utils import _WHITESPACE_RE, _cancelled, log_warning
+    from .utils import _WHITESPACE_RE, _cancelled, log_warning, single_line, text_with_structure
     from .types import RoomType, BuildingType
     from .fetch import ClientLike, get_page_store
 except ModuleNotFoundError:
-    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning  # type: ignore
+    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning, single_line, text_with_structure  # type: ignore
     from src.parser.types import RoomType, BuildingType
     from src.parser.fetch import ClientLike, get_page_store  # type: ignore
 
@@ -214,10 +214,10 @@ def _extract_room_values(dl: Tag) -> dict[str, str]:
         dd = row.find("dd", recursive=False)
         if dt is None or dd is None:
             continue
-        label = _WHITESPACE_RE.sub(" ", dt.get_text(" ", strip=True))
+        label = single_line(dt.get_text(" ", strip=True))
         key = _ROOM_LABEL_MAP.get(label)
         if key is not None:
-            values[key] = _WHITESPACE_RE.sub(" ", dd.get_text(" ", strip=True))
+            values[key] = text_with_structure(dd)
     return values
 
 
@@ -232,14 +232,17 @@ def _extract_section_values(dl: Tag, section_name: str, label_map: dict[str, str
         dd = row.find("dd")
         if dt is None or dd is None:
             continue
-        label = _WHITESPACE_RE.sub(" ", dt.get_text(" ", strip=True))
+        label = single_line(dt.get_text(" ", strip=True))
         key = label_map.get(label)
         if key is None:
             continue
+        structured = text_with_structure(dd)
         if key == "address":
-            values[key] = dd.get_text(", ", strip=True)
+            # An address is one line; its ``<br>`` separated parts are joined
+            # back with ", " (the previous behaviour).
+            values[key] = structured.replace("\n", ", ")
         else:
-            values[key] = _WHITESPACE_RE.sub(" ", dd.get_text(" ", strip=True))
+            values[key] = structured
     return values
 
 

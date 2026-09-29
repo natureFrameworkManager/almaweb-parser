@@ -211,4 +211,56 @@ empty building/address forever.
 * 0 module headers fail to split; 0 duplicate module labels.
 
 Note: the row-level Termine checks in `scan_event_detection.py` (empty/multi-room
+
+## Fixes applied (parser only — API untouched)
+
+A new block-aware extractor and a hardened prerequisite parser address both
+failure-mode families (#1 and #2) everywhere they occur.
+
+**`src/parser/utils.py`**
+* `text_with_structure(tag)` walks the descendants, emits ``"\n"`` for
+  block-level tags (``<br>``, ``<div>``, ``<p>``, ``<li>``, ``<tr>``, ...) and
+  ``" "`` for inline tags (``<span>``, hidden ``<input>``), then normalises each
+  line. It replaces both ``get_text(strip=True)`` (gluing) and
+  ``get_text(" ", strip=True)`` (flattening) for parsed values.
+* `single_line(text)` for labels/one-line values.
+
+**`src/parser/module_parser.py`**
+* `extract_module_values` now stores values via `text_with_structure`, so the
+  ``<br>`` line structure of `Teilnahmevoraussetzungen` reaches the parser.
+* `parse_prerequisites` rewritten: splits at the first **top-level** colon
+  (colons inside parentheses no longer truncate the key), merges duplicate
+  contexts, and joins all colon-less lines into `allgemein` instead of
+  overwriting it. New helper `_split_prerequisite`.
+
+**`src/parser/course_parser.py`**
+* `extract_course_values` uses `text_with_structure`, removing the glued words
+  in `Organisatorisches` / `Offizielle Kursbeschreibung` / `Literatur`
+  (`...StudiengängePrüfungsleistungen...` → `...Studiengänge\nPrüfungsleistungen...`).
+
+**`src/parser/room_parser.py`**
+* `_extract_room_values` / `_extract_section_values` use the same helper; the
+  building address keeps its previous single-line `", "` join.
+
+### Verification (offline, full store)
+
+| metric | before | after |
+|--------|-------:|------:|
+| prerequisite keys lost | 3 840 | **0** |
+| pages with a swallowed following key | 1 678 | **0** |
+| course scalar values with glued/truncated text | 2 497 | **0** |
+| module scalar mismatches | 0 | 0 |
+| exam rows raw vs parsed | 8 705 / 8 705 | 8 705 / 8 705 |
+| modules parsed without raising (800-page smoke) | — | 800/800 |
+
+New tests: `analysis/test_text_structure.py`. Scanners
+`analysis/scan_text_separators.py` (per-field GLUED/FLATTENED verdicts) and
+`analysis/scan_prerequisites.py` (keys lost) reproduce the numbers.
+
+Not changed: the API, `database.db`, `.pagedata`, and the crawl snapshots. The
+remaining findings #3–#8 are untouched (deferred).
+
+> Note: `database.db` must be re-generated (`python -m src.parser.run_parse`) for
+> the fixes to take effect in stored data.
+
 rows) were not completed — that script is left fixed for a follow-up run.

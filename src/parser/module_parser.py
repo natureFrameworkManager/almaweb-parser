@@ -11,12 +11,12 @@ from src.parser.types import AchievementType, CourseType, EventType, ExamType, R
 
 try:
     from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
-    from .utils import _WHITESPACE_RE, _cancelled, log_warning
+    from .utils import _WHITESPACE_RE, _cancelled, log_warning, single_line, text_with_structure
     from .types import ModuleType
     from .fetch import ClientLike, create_cached_client
 except ModuleNotFoundError:
     from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
-    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning  # type: ignore
+    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning, single_line, text_with_structure  # type: ignore
     from src.parser.types import ModuleType
     from src.parser.fetch import ClientLike, create_cached_client  # type: ignore
 
@@ -362,7 +362,7 @@ def extract_module_values(content: Tag | None) -> dict[str, str]:
         return values
 
     for label_tag in content.select(".font-semibold.break-all"):
-        label = _WHITESPACE_RE.sub(" ", label_tag.get_text(" ", strip=True)).rstrip(":")
+        label = single_line(label_tag.get_text(" ", strip=True)).rstrip(":")
         key = _LABEL_MAP.get(label)
         if key is None:
             # Surface fields the parser does not know about instead of dropping
@@ -377,7 +377,7 @@ def extract_module_values(content: Tag | None) -> dict[str, str]:
         value_tag = label_tag.find_next_sibling("div")
         if value_tag is None:
             continue
-        values[key] = _WHITESPACE_RE.sub(" ", value_tag.get_text(" ", strip=True))
+        values[key] = text_with_structure(value_tag)
 
     return values
 
@@ -393,23 +393,54 @@ def parse_float(value: str) -> float:
     return float(match.group(0)) if match else 0.0
 
 
+def _split_prerequisite(part: str) -> tuple[str, str] | None:
+    """Split a ``<context>: <requirement>`` line at the first *top-level* colon.
+
+    The context (a study-programme name) may itself contain a colon inside
+    parentheses, e.g. ``Master of Science ... (Schwerpunkt: Nachhaltigkeitsmanagement)``.
+    Splitting at the first colon would cut the key in half; only a colon outside
+    any parentheses is treated as the separator.
+    """
+    depth = 0
+    for index, char in enumerate(part):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(0, depth - 1)
+        elif char == ":" and depth == 0:
+            key = part[:index].strip()
+            value = part[index + 1:].strip()
+            if key and value:
+                return key, value
+            return None
+    return None
+
+
 def parse_prerequisites(value: str) -> dict[str, str]:
     if not value:
         return {}
 
+    # ``extract_module_values`` preserves the ``<br>`` line structure, one
+    # requirement per line.
     parts = [part.strip() for part in re.split(r"[\r\n]+", value) if part.strip()]
 
     prerequisites: dict[str, str] = {}
+    general: list[str] = []
     for part in parts:
-        if ":" in part:
-            key, val = part.split(":", 1)
-            key = key.strip()
-            val = val.strip()
-            if key and val:
-                prerequisites[key] = val
-                continue
-        if part:
-            prerequisites["allgemein"] = part
+        split = _split_prerequisite(part)
+        if split is None:
+            general.append(part)
+            continue
+        key, val = split
+        # The same context can be listed on several lines; keep every value
+        # instead of dropping all but the last (the old "allgemein" overwrite).
+        if key in prerequisites:
+            prerequisites[key] = f"{prerequisites[key]} {val}".strip()
+        else:
+            prerequisites[key] = val
+
+    if general:
+        prerequisites["allgemein"] = " ".join(general)
 
     return prerequisites
 

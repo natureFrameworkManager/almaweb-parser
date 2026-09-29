@@ -7,7 +7,16 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import Any
 
+from bs4 import NavigableString, Tag
+
 _WHITESPACE_RE = re.compile(r"\s+")
+
+# Block-level HTML elements whose boundary is a line break in CampusNet text
+# values. ``<br>`` is the common one; the rest guard against nested blocks.
+_BLOCK_TAGS = frozenset({
+    "br", "div", "p", "li", "ul", "ol", "tr", "td", "th",
+    "h1", "h2", "h3", "h4", "h5", "h6", "section", "article", "table",
+})
 
 
 def _silence_httpx_logs() -> None:
@@ -19,6 +28,42 @@ def _silence_httpx_logs() -> None:
         logger.disabled = True
 
 
+def text_with_structure(tag: Tag) -> str:
+    """Return the text of ``tag`` preserving block/line boundaries.
+
+    BeautifulSoup's ``get_text()`` either glues adjacent text nodes together
+    (``get_text(strip=True)``, no separator) or collapses every boundary - line
+    breaks included - to a single space (``get_text(" ", strip=True)``).  Both
+    lose information that CampusNet puts into the markup:
+
+    * ``<br>`` separates requirement lines, list items, paragraphs, addresses;
+    * inline elements (``<span>``, hidden ``<input>``) must not glue words.
+
+    This helper walks the descendants, emits ``"\\n"`` for block-level tags and
+    ``" "`` for inline tags, then whitespace-normalises every line.  The result
+    is ``\\n``-joined non-empty lines, so structured fields (prerequisites) stay
+    parseable and free text keeps its line structure without glued words.
+    """
+    parts: list[str] = []
+    for node in tag.descendants:
+        if isinstance(node, NavigableString):
+            parts.append(str(node))
+        elif isinstance(node, Tag):
+            parts.append("\n" if node.name in _BLOCK_TAGS else " ")
+    raw = "".join(parts)
+    lines: list[str] = []
+    for line in raw.replace("\xa0", " ").split("\n"):
+        line = _WHITESPACE_RE.sub(" ", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def single_line(text: str) -> str:
+    """Collapse a possibly multi-line value to one whitespace-normalised line."""
+    return _WHITESPACE_RE.sub(" ", (text or "").replace("\xa0", " ")).strip()
+
+
 def _cancelled(cancel_event: Event | None) -> bool:
     return cancel_event is not None and cancel_event.is_set()
 
@@ -27,6 +72,7 @@ def _is_multidimensional(arr: list) -> bool:
         if isinstance(element, list):
             return True
     return False
+
 
 
 # ---------------------------------------------------------------------------

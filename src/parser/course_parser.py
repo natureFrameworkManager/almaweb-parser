@@ -8,12 +8,12 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 try:
-    from .utils import _WHITESPACE_RE, _cancelled, log_warning
+    from .utils import _WHITESPACE_RE, _cancelled, log_warning, single_line, text_with_structure
     from .types import CourseType, EventType, RoomType, BuildingType
     from .room_parser import fetch_and_parse_room_details
     from .fetch import ClientLike, create_cached_client
 except ModuleNotFoundError:
-    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning  # type: ignore
+    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning, single_line, text_with_structure  # type: ignore
     from src.parser.types import CourseType, EventType, RoomType, BuildingType
     from src.parser.room_parser import fetch_and_parse_room_details
     from src.parser.fetch import ClientLike, create_cached_client  # type: ignore
@@ -273,7 +273,7 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
         label_tag = row.find("b", recursive=False)
         if label_tag is None:
             continue
-        label = _WHITESPACE_RE.sub(" ", label_tag.get_text(" ", strip=True)).rstrip(":")
+        label = single_line(label_tag.get_text(" ", strip=True)).rstrip(":")
         entry = _COURSE_LABEL_MAP.get(label)
         if entry is None:
             # Surface fields the parser does not know about instead of dropping
@@ -288,7 +288,9 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
         key, tag_name = entry
         tag = row.find(tag_name)
         if tag:
-            values[key] = tag.get_text(strip=True)
+            # Block/line boundaries (``<br>``) are preserved instead of being
+            # glued together or flattened to a single space.
+            values[key] = text_with_structure(tag)
 
     return values
 
