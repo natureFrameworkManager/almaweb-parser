@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from database.model import Module, Course, Event, Staff, Degree, Semester
 from .shared import SessionDep, export_event_parameters, export_parameters, paging_parameters, model_field_enum, sort_parameters, fields_parameters, include_parameters, page_query, sort_query, filter_query, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
+from .events import parse_iso_date
 from schemas import PaginatedResponse, ModuleRead, CourseRead, EventRead, StaffRead, DegreeRead
 
 
@@ -51,10 +52,18 @@ def get_modules(
     query = select(Module)
 
     # Apply filters based on query parameters
+    if id:
+        query = query.where(Module.id.in_(id)) # type: ignore
     if name:
         query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in name])) # type: ignore
     if number:
         query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in number])) # type: ignore
+    if degree_id:
+        query = query.where(Module.degrees.any(Degree.id.in_(degree_id)))  # type: ignore
+    if faculty_id:
+        query = query.where(Module.faculty_id.in_(faculty_id))  # type: ignore
+    if course_id:
+        query = query.where(Module.courses.any(Course.id.in_(course_id)))  # type: ignore
     if responsible_person:
         query = query.where(or_(*[Module.responsible_persons.any(Staff.name.ilike(f"%{value}%")) for value in responsible_person]))  # type: ignore
     if staff_id:
@@ -80,6 +89,15 @@ def get_modules(
         query = query.where(Module.credits >= credits_min)
     if credits_max is not None:
         query = query.where(Module.credits <= credits_max)
+    if has_courses is not None:
+        courses_exist = Module.courses.any()  # type: ignore
+        query = query.where(courses_exist if has_courses else ~courses_exist)
+    if has_events is not None:
+        events_exist = Module.courses.any(Course.events.any())  # type: ignore
+        query = query.where(events_exist if has_events else ~events_exist)
+    if has_staff is not None:
+        staff_exist = Module.responsible_persons.any()  # type: ignore
+        query = query.where(staff_exist if has_staff else ~staff_exist)
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Module)
@@ -133,14 +151,22 @@ def get_module_events(
     fielding: Annotated[dict, Depends(fields_parameters(Event))],
     paging: Annotated[dict, Depends(paging_parameters)],
     exports: Annotated[dict, Depends(export_event_parameters)],
-    date_from: str | None = Query(None, description="Filter events that start on or after this ISO 8601 datetime."),
-    date_to: str | None = Query(None, description="Filter events that end on or before this ISO 8601 datetime."),
+    date_from: str | None = Query(None, description="Filter events that occur on or after this date (YYYY-MM-DD, inclusive)."),
+    date_to: str | None = Query(None, description="Filter events that occur on or before this date (YYYY-MM-DD, inclusive)."),
     weekday: list[int] | None = Query(None, description="Filter events that occur on these weekdays (0=Monday, 6=Sunday). Repeatable for multiple days."),
 ):
     """
     Retrieve a module events.
     """
     query = select(Event).where(Event.courses.any(Course.modules.any(Module.id == module_id)))  # type: ignore
+    if date_from:
+        query = query.where(Event.event_date >= parse_iso_date(date_from, "date_from"))
+    if date_to:
+        query = query.where(Event.event_date <= parse_iso_date(date_to, "date_to"))
+    if weekday:
+        # API convention is 0=Monday..6=Sunday; SQLite strftime '%w' is 0=Sunday..6=Saturday.
+        sqlite_weekdays = [str((day + 1) % 7) for day in weekday]
+        query = query.where(func.strftime("%w", Event.event_date).in_(sqlite_weekdays))
     mod = session.get(Module, module_id)
     ical_exports = {**exports, "_filter_module_name": mod.name if mod else None}
     ical_including = _ical_augment_including(including, ical_exports)
