@@ -67,7 +67,7 @@ app = FastAPI(
         "\n- **`sort` / `order`** accept a single column only; multi-level sorting has to be applied client-side."
         "\n- **Pagination** (`page` / `page_size`) is disabled unless both are supplied."
     ),
-    version="1.0.3",
+    version="1.1.0",
     root_path=PROXY_ROOT_PATH
 )
 
