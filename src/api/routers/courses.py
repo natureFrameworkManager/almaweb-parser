@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.model import Course, Event, Module, Staff, Semester
+from database.model import Course, Event, EventType, Module, Staff, Semester
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, CourseRead, EventRead, ModuleRead, StaffRead
 
@@ -24,6 +24,7 @@ def get_courses(
     name: list[str] | None = Query(None, description="Course name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     number: list[str] | None = Query(None, description="Course number values (repeatable; case-insensitive, partial match; OR within this filter)."),
     type: list[str] | None = Query(None, description="Course type values (repeatable; case-insensitive, partial match; OR within this filter), e.g. \"Vorlesung\", \"Seminar\"."),
+    type_id: list[int] | None = Query(None, description="Event type IDs the course belongs to (repeatable; direct match; OR within this filter). Use when you already have type IDs instead of names."),
     language: list[str] | None = Query(None, description="Course language values (repeatable; case-insensitive, partial match; OR within this filter)."),
     staff: list[str] | None = Query(None, description="Course staff values (repeatable; case-insensitive, partial match; OR within this filter)."),
     staff_id: list[int] | None = Query(None, description="Staff IDs the course is taught by (repeatable; OR within this filter)."),
@@ -47,11 +48,14 @@ def get_courses(
     if number:
         query = query.where(or_(*[Course.number.ilike(f"%{value}%") for value in number])) # type: ignore
     if type:
-        query = query.where(or_(*[Course.type.ilike(f"%{value}%") for value in type])) # type: ignore
+        # Course.type is an int FK to EventType; the API advertises type *names*, so resolve them first.
+        query = query.where(Course.type.in_(select(EventType.id).where(or_(*[EventType.name.ilike(f"%{value}%") for value in type])))) # type: ignore
+    if type_id:
+        query = query.where(Course.type.in_(type_id)) # type: ignore
     if language:
         query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if staff:
-        query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
+        query = query.where(or_(*[Course.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff])) # type: ignore
     if staff_id:
         query = query.where(Course.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     if has_events is not None:
@@ -65,13 +69,11 @@ def get_courses(
         # Courses offered in any of the given semesters (CourseSemesterLink).
         query = query.where(Course.semesters.any(Semester.id.in_(semester_id)))  # type: ignore
     if module_id:
-        query = query.where(Course.module_id.in_(module_id)) # type: ignore
-    if module_name or module_number:
-        query = query.join(Course.module) # type: ignore
-        if module_name:
-            query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in module_name])) # type: ignore
-        if module_number:
-            query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in module_number])) # type: ignore
+        query = query.where(Course.modules.any(Module.id.in_(module_id))) # type: ignore
+    if module_name:
+        query = query.where(or_(*[Course.modules.any(Module.name.ilike(f"%{value}%")) for value in module_name])) # type: ignore
+    if module_number:
+        query = query.where(or_(*[Course.modules.any(Module.number.ilike(f"%{value}%")) for value in module_number])) # type: ignore
 
     data, query = page_query(session, query, paging)
     query = sort_query(query, sorting, Course)

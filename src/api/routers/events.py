@@ -3,12 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func
 from sqlmodel import select
 from datetime import date, time, timedelta
 import re
 
-from database.model import Event, Course, Module, Staff, Location, Semester
+from database.model import Event, Course, Module, Staff, Location, Semester, Building, EventType
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, EventRead, CourseRead, ModuleRead, StaffRead, LocationRead
 
@@ -42,7 +42,7 @@ def get_events(
     date: str | None = Query(None, description="Event date (YYYY-MM-DD)"),
     date_from: str | None = Query(None, description="Start date for range filtering (YYYY-MM-DD, inclusive)"),
     date_to: str | None = Query(None, description="End date for range filtering (YYYY-MM-DD, inclusive)"),
-    weekday: list[Annotated[int, Query(ge=0, le=6)]] | None = Query(None, description="Filter by weekday values. (0=Sunday, 1=Monday, ..., 6=Saturday)"),
+    weekday: list[Annotated[int, Query(ge=0, le=6)]] | None = Query(None, description="Filter by weekday values (0=Monday, 1=Tuesday, ..., 6=Sunday). Repeatable for multiple days."),
     start_time_from: str | None = Query(None, description="Filter events whose start time is at or after this time (HH:MM, inclusive)."),
     start_time_to: str | None = Query(None, description="Filter events whose start time is at or before this time (HH:MM, inclusive)."),
     end_time_from: str | None = Query(None, description="Filter events whose end time is at or after this time (HH:MM, inclusive)."),
@@ -50,13 +50,14 @@ def get_events(
     time_overlap: str | None = Query(None, description="Return events active at this time (HH:MM), i.e. start_time <= value <= end_time."),
     location_id: int | None = Query(None, description="ID of the location where the event takes place"),
     location: str | None = Query(None, description="Event location (case-insensitive, partial match)"),
-    building_id: int | None = Query(None, description="ID of the building where the event takes place"),
+    building_id: list[int] | None = Query(None, description="Building ID values the event takes place in (repeatable; OR within this filter)."),
     building: str | None = Query(None, description="Name of the building where the event takes place (case-insensitive, partial match)"),
     building_address: str | None = Query(None, description="Address of the building where the event takes place (case-insensitive, partial match)"),
     course_id: int | None = Query(None, description="ID of the course the event belongs to"),
     course_name: str | None = Query(None, description="Name of the course the event belongs to (case-insensitive, partial match)"),
     course_number: str | None = Query(None, description="Number of the course the event belongs to (case-insensitive, partial match)"),
     course_type: str | None = Query(None, description="Type of the course the event belongs to (case-insensitive, partial match)"),
+    course_type_id: list[int] | None = Query(None, description="Event type IDs of the course the event belongs to (repeatable; direct match; OR within this filter). Use when you already have type IDs instead of names."),
     module_id: int | None = Query(None, description="ID of the module the event belongs to"),
     module_name: str | None = Query(None, description="Name of the module the event belongs to (case-insensitive, partial match)"),
     module_number: str | None = Query(None, description="Number of the module the event belongs to (case-insensitive, partial match)"),
@@ -93,14 +94,14 @@ def get_events(
     if location_id is not None:
         query = query.where(Event.location_id == location_id)
     if location:
-        # If event has location check if the location name matches
-        query = query.where(and_(Event.location is not None, Event.location.has(Location.name.ilike(f"%{location}%")))) # type: ignore
-    if building_id is not None:
-        query = query.where(and_(Event.location is not None, Event.location.has(Location.building_id == building_id))) # type: ignore
+        # If event has a location, check whether the location name matches.
+        query = query.where(Event.location.has(Location.name.ilike(f"%{location}%"))) # type: ignore
+    if building_id:
+        query = query.where(Event.location.has(Location.building_id.in_(building_id))) # type: ignore
     if building:
-        query = query.where(and_(Event.location is not None, Event.location.has(Location.building.has(Location.name.ilike(f"%{building}%"))))) # type: ignore
+        query = query.where(Event.location.has(Location.building.has(Building.name.ilike(f"%{building}%")))) # type: ignore
     if building_address:
-        query = query.where(and_(Event.location is not None, Event.location.has(Location.building.has(Location.address.ilike(f"%{building_address}%"))))) # type: ignore
+        query = query.where(Event.location.has(Location.building.has(Building.address.ilike(f"%{building_address}%")))) # type: ignore
     if course_id is not None:
         query = query.where(Event.courses.any(Course.id == course_id)) # type: ignore
     if course_name:
@@ -108,7 +109,10 @@ def get_events(
     if course_number:
         query = query.where(Event.courses.any(Course.number.ilike(f"%{course_number}%"))) # type: ignore
     if course_type:
-        query = query.where(Event.courses.any(Course.type.ilike(f"%{course_type}%"))) # type: ignore
+        # Course.type is an int FK to EventType; the API advertises type *names*, so resolve them first.
+        query = query.where(Event.courses.any(Course.type.in_(select(EventType.id).where(EventType.name.ilike(f"%{course_type}%"))))) # type: ignore
+    if course_type_id:
+        query = query.where(Event.courses.any(Course.type.in_(course_type_id))) # type: ignore
     if module_id is not None:
         query = query.where(Event.courses.any(Course.modules.any(Module.id == module_id))) # type: ignore
     if module_name:
