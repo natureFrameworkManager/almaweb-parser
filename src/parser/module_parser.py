@@ -11,12 +11,14 @@ from src.parser.types import CourseType, EventType, ExamType, RoomType
 
 try:
     from .course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
-    from .utils import _WHITESPACE_RE, _cancelled
+    from .utils import _WHITESPACE_RE, _cancelled, log_warning
     from .types import ModuleType
+    from .fetch import ClientLike, create_cached_client
 except ModuleNotFoundError:
     from src.parser.course_parser import handleCourseList, MAX_CONCURRENT_COURSE_REQUESTS, _parse_date, _parse_time, _cell_value, _clean_staff
-    from src.parser.utils import _WHITESPACE_RE, _cancelled
+    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning  # type: ignore
     from src.parser.types import ModuleType
+    from src.parser.fetch import ClientLike, create_cached_client  # type: ignore
 
 if TYPE_CHECKING:
     from .crawler import ModuleLink
@@ -44,7 +46,24 @@ _EXAM_LABEL_MAP: dict[str, str] = {
 }
 
 
-def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None = None, progress_tracker=None):
+def handleModuleList(
+    moduleList: list["ModuleLink"],
+    cancel_event: Event | None = None,
+    progress_tracker=None,
+    *,
+    store=None,
+    refresh: bool = False,
+    offline: bool = False,
+    on_module_done=None,
+):
+    """Fetch, parse and persist every module in ``moduleList`` concurrently.
+
+    ``store``/``refresh``/``offline`` are forwarded to the cached HTTP client
+    (see :mod:`src.parser.fetch`), which makes re-runs serve pages from disk.
+    ``on_module_done(index, module, parsed)`` is invoked for every finished
+    module (``parsed`` is ``None`` on failure), allowing callers to build
+    resume checkpoints or per-module debug dumps.
+    """
     if not moduleList:
         return
 
@@ -56,7 +75,13 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
         max_connections=total_connections,
         max_keepalive_connections=total_connections,
     )
-    with httpx.Client(limits=limits, timeout=15.0) as client:
+    with create_cached_client(
+        limits=limits,
+        timeout=15.0,
+        store=store,
+        refresh=refresh,
+        offline=offline,
+    ) as client:
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MODULE_REQUESTS) as executor:
             futures = [
                 executor.submit(_fetch_and_parse_module, idx, module, client, cancel_event, progress_tracker)
@@ -81,8 +106,17 @@ def handleModuleList(moduleList: list["ModuleLink"], cancel_event: Event | None 
                         try:
                             insert_module_graph(parsed)
                         except Exception as e:
-                            print(f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}")
+                            log_warning(
+                                "module_insert_failed",
+                                f"Failed inserting module {parsed.get('number', '<unknown>')} - {parsed.get('name', '<unknown>')}: {e}",
+                                number=parsed.get("number", ""),
+                                name=parsed.get("name", ""),
+                                error=str(e),
+                            )
                             raise
+                    if on_module_done is not None:
+                        on_module_done(idx, moduleList[idx], parsed)
+                    if parsed is not None:
                         # Free the parsed module data immediately after DB insert
                         del parsed
 
@@ -165,7 +199,7 @@ def print_modules(modules: list[ModuleType]):
         for module in modules
     ]
 
-def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Client, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, ModuleType | None]:
+def _fetch_and_parse_module(index: int, module: "ModuleLink", client: ClientLike, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, ModuleType | None]:
     try:
         if _cancelled(cancel_event):
             return index, None
@@ -180,21 +214,33 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: httpx.Clie
                 return index, None
             return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
 
-        print(f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}")
+        log_warning(
+            "module_fetch_status",
+            f"Failed to fetch details for {module.name} with status code {response.status_code} from URL: {url}",
+            module=module.name,
+            status=response.status_code,
+            url=url,
+        )
     except Exception as e:
-        print(f"An error occurred while fetching details for {module.name} under URL: {module.url}: {e}")
+        log_warning(
+            "module_fetch_error",
+            f"An error occurred while fetching details for {module.name} under URL: {module.url}: {e}",
+            module=module.name,
+            url=module.url,
+            error=str(e),
+        )
 
     return index, None
 
 
-def parseModule(html_content: str, path: list[str], client: httpx.Client | None = None, cancel_event: Event | None = None, progress_tracker=None) -> ModuleType | None:
+def parseModule(html_content: str, path: list[str], client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> ModuleType | None:
     if _cancelled(cancel_event):
         return None
 
     soup = BeautifulSoup(html_content, 'html.parser')
     header = soup.find("h1")
     if not header:
-        print("Failed to find module header.")
+        log_warning("module_header_missing", "Failed to find module header.")
         return None
     number, name = header.get_text(strip=True).split(None, 1)
 
@@ -233,7 +279,12 @@ def parseModule(html_content: str, path: list[str], client: httpx.Client | None 
         "courses": courses,
         "exams": exams,
     }
-    room_count = len(set(room for course in module['courses'] if course is not None for event in course['events'] if event is not None for room in ([event.get('room')] if event.get('room') else [])))
+    room_count = len({
+        (location.get("name") or location.get("external_id"))
+        for course in module['courses'] if course is not None
+        for event in course['events'] if event is not None
+        for location in ([event.get('location')] if event.get('location') else [])
+    })
 
     # Update progress tracker
     if progress_tracker is not None:
@@ -327,12 +378,12 @@ def parse_exam_datetime(datetime_str: str) -> tuple[str, str, str]:
 
 def extract_exams(content: Tag | None, course_name: str, progress_tracker=None) -> list[ExamType]:
     if content is None:
-        print(f"No exams content found for course: {course_name}")
+        log_warning("no_exams_content", f"No exams content found for course: {course_name}", course=course_name)
         return []
 
     header = content.find("div", recursive=False)
     if header is not None and header.get_text(" ", strip=True) != "Modulabschlussprüfungen":
-        print(f"No exams section found for course: {course_name}")
+        log_warning("no_exams_section", f"No exams section found for course: {course_name}", course=course_name)
         return []
 
     exams = []

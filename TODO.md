@@ -10,7 +10,7 @@ A new `httpx.Client()` is created inline per room fetch (`fetch_and_parse_room_d
 
 ---
 
-### 2. Wrong dict key `'room'` in room-count log line
+### ✅ 2. Wrong dict key `'room'` in room-count log line
 **File:** `src/parser/module_parser.py`  
 `event.get('room')` is used, but `EventType` stores the location under key `'location'`. The room count will always be 0.
 

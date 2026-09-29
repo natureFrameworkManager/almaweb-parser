@@ -41,6 +41,10 @@ try:
     from .degree_parser import sync_module_degrees
 except (ImportError, ModuleNotFoundError):
     from src.parser.degree_parser import sync_module_degrees
+try:
+    from .snapshot import DEFAULT_SNAPSHOT_DIR, append_module_jsonl, write_crawl_snapshot
+except (ImportError, ModuleNotFoundError):
+    from src.parser.snapshot import DEFAULT_SNAPSHOT_DIR, append_module_jsonl, write_crawl_snapshot  # type: ignore
 class LectureSpider(scrapy.Spider):
     name = "lecture_spider"
     start_urls = [
@@ -57,9 +61,17 @@ class LectureSpider(scrapy.Spider):
         super().__init__(name, **kwargs)
         create_db_and_tables()
         # Enable progress output via: scrapy crawl lecture_spider -a progress=1
-        self.progress_tracker = ProgressTracker(enabled=bool(getattr(self, "progress", False)))
+        # (``progress_bar`` is accepted as an alias for convenience)
+        progress_enabled = bool(getattr(self, "progress", False)) or bool(getattr(self, "progress_bar", False))
+        self.progress_tracker = ProgressTracker(enabled=progress_enabled)
         # Run the degree extraction second pass after parsing via: scrapy crawl lecture_spider -a sync_degrees=1
         self.sync_degrees = bool(getattr(self, "sync_degrees", False))
+        # Crawl only (write a snapshot, skip parsing) via: -a crawl_only=1
+        self.crawl_only = bool(getattr(self, "crawl_only", False))
+        # Stream discovered modules to a JSONL file while crawling via: -a stream_snapshot=1
+        self.stream_snapshot = bool(getattr(self, "stream_snapshot", False))
+        # Directory for crawl snapshots via: -a snapshot_dir=snapshots
+        self.snapshot_dir = str(getattr(self, "snapshot_dir", DEFAULT_SNAPSHOT_DIR))
         if self.progress_tracker.enabled:
             self.progress_tracker.add_phase("semesters", 0)
             self.progress_tracker.add_phase("faculties", 0)
@@ -152,12 +164,25 @@ class LectureSpider(scrapy.Spider):
                 url = response.urljoin(url)
             module_link = ModuleLink(name, url, parent_node.getPath())
             self.found_modules.append(module_link)
+            if self.stream_snapshot:
+                try:
+                    append_module_jsonl(module_link, self.snapshot_dir)
+                except OSError as e:
+                    self.logger.warning(f"Could not append module snapshot: {e}")
             self.progress_tracker.increment("modules_found")
             self.progress_tracker.render_crawling()
     
     def closed(self, reason):
         if reason in {"shutdown", "cancelled"}:
             print("Parsing cancelled. Skipping module parsing.")
+            # Keep whatever crawl progress we have so it can be re-parsed later.
+            try:
+                snapshot_paths = write_crawl_snapshot(
+                    self.found_faculties, self.module_set(self.found_modules), directory=self.snapshot_dir
+                )
+                print(f"Wrote partial crawl snapshot to {snapshot_paths['latest']}.")
+            except OSError as e:
+                print(f"Could not write partial crawl snapshot: {e}")
             return
         cancel_event = Event()
         previous_sigint_handler = signal.getsignal(signal.SIGINT)
@@ -183,6 +208,22 @@ class LectureSpider(scrapy.Spider):
             
             module_list = self.module_set(module_list)
             module_list.sort(key=lambda m: m.name)
+
+            # Persist the crawl result so parsing can be re-run without crawling.
+            try:
+                snapshot_paths = write_crawl_snapshot(
+                    self.found_faculties, module_list, directory=self.snapshot_dir
+                )
+                print(
+                    f"Wrote crawl snapshot with {len(module_list)} modules to "
+                    f"{snapshot_paths['latest']} (history: {snapshot_paths['dated']})."
+                )
+            except OSError as e:
+                print(f"Could not write crawl snapshot: {e}")
+
+            if self.crawl_only:
+                print("crawl_only=1: skipping module parsing.")
+                return
 
             # Update progress tracker with final crawling counts and parsing totals
             if self.progress_tracker.enabled:

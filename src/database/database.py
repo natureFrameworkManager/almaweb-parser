@@ -11,9 +11,9 @@ except ModuleNotFoundError:
     from src.parser.types import CourseType, EventType, ModuleType, RoomType, BuildingType, ExamType
 
 try:
-    from parser.utils import _is_multidimensional
+    from parser.utils import _is_multidimensional, log_warning
 except ModuleNotFoundError:
-    from src.parser.utils import _is_multidimensional
+    from src.parser.utils import _is_multidimensional, log_warning  # type: ignore
 
 try:
     from .model import (Course, Event, Module, Faculty, ModuleExam, Location, Staff, Status, Semester, Building, Degree,
@@ -809,8 +809,15 @@ def insert_module_graph(module_data: ModuleType) -> tuple[bool, dict]:
                 for path_element in path_group:
                     if path_element.startswith("SoSe") or path_element.startswith("WiSe"):
                         if semester_name is not None and semester_name != path_element:
-                            print(f"Warning: Multiple semester names found in module path for module {module_data['number']}: {semester_name} and {path_element}. Using the first one.")
-                            print(f"Module path: {module_data['path']}")
+                            log_warning(
+                                "multiple_semesters",
+                                f"Warning: Multiple semester names found in module path for module {module_data['number']}: "
+                                f"{semester_name} and {path_element}. Using the first one. Path: {module_data['path']}",
+                                number=module_data["number"],
+                                first=semester_name,
+                                second=path_element,
+                                path=module_data["path"],
+                            )
                             break
                         semester_name = path_element
                         if path_element.startswith("SoSe"):

@@ -8,13 +8,15 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 try:
-    from .utils import _WHITESPACE_RE, _cancelled
+    from .utils import _WHITESPACE_RE, _cancelled, log_warning
     from .types import CourseType, EventType, RoomType, BuildingType
     from .room_parser import fetch_and_parse_room_details
+    from .fetch import ClientLike, create_cached_client
 except ModuleNotFoundError:
-    from src.parser.utils import _WHITESPACE_RE, _cancelled
+    from src.parser.utils import _WHITESPACE_RE, _cancelled, log_warning  # type: ignore
     from src.parser.types import CourseType, EventType, RoomType, BuildingType
     from src.parser.room_parser import fetch_and_parse_room_details
+    from src.parser.fetch import ClientLike, create_cached_client  # type: ignore
 
 MAX_CONCURRENT_COURSE_REQUESTS = 8
 
@@ -97,7 +99,7 @@ def _clean_staff(raw: str) -> list[str]:
             staff.append(entry)
     return staff
 
-def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: httpx.Client | None = None, progress_tracker=None) -> list[CourseType | None]:
+def handleCourseList(urls: list[str], cancel_event: Event | None = None, client: ClientLike | None = None, progress_tracker=None, *, store=None, refresh: bool = False, offline: bool = False) -> list[CourseType | None]:
     if not urls:
         return []
 
@@ -109,7 +111,13 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None, client:
             max_connections=MAX_CONCURRENT_COURSE_REQUESTS,
             max_keepalive_connections=MAX_CONCURRENT_COURSE_REQUESTS,
         )
-        client = httpx.Client(limits=limits, timeout=15.0)
+        client = create_cached_client(
+            limits=limits,
+            timeout=15.0,
+            store=store,
+            refresh=refresh,
+            offline=offline,
+        )
     assert client is not None
 
     try:
@@ -143,7 +151,7 @@ def handleCourseList(urls: list[str], cancel_event: Event | None = None, client:
     return [courses_by_index[idx] for idx in sorted(courses_by_index.keys())]
 
 
-def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, bool, CourseType | None]:
+def _fetch_and_parse_course(index: int, url: str, client: ClientLike, cancel_event: Event | None = None, progress_tracker=None) -> tuple[int, bool, CourseType | None]:
     try:
         if _cancelled(cancel_event):
             return index, False, None
@@ -156,17 +164,27 @@ def _fetch_and_parse_course(index: int, url: str, client: httpx.Client, cancel_e
                 return index, False, None
             return index, True, parseCourse(response.text, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
 
-        print(f"Failed to fetch details with status code {response.status_code} from URL: {url}")
+        log_warning(
+            "course_fetch_status",
+            f"Failed to fetch details with status code {response.status_code} from URL: {url}",
+            status=response.status_code,
+            url=url,
+        )
     except Exception as e:
-        print(f"An error occurred while fetching details from URL: {url}: {e}")
+        log_warning(
+            "course_fetch_error",
+            f"An error occurred while fetching details from URL: {url}: {e}",
+            url=url,
+            error=str(e),
+        )
 
     return index, False, None
 
-def parseCourse(html_content: str, client: httpx.Client | None = None, cancel_event: Event | None = None, progress_tracker=None) -> CourseType | None:
+def parseCourse(html_content: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> CourseType | None:
     soup = BeautifulSoup(html_content, 'html.parser')
     header = soup.find("h1")
     if not header:
-        print("Failed to find course header.")
+        log_warning("course_header_missing", "Failed to find course header.")
         return None
     number, name = header.get_text(strip=True).split(None, 1)
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
@@ -226,14 +244,20 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
 
     return values
 
-def extract_events(content: Tag | None, course_name: str, client: httpx.Client | None = None, cancel_event: Event | None = None, progress_tracker=None) -> list[EventType]:
+def extract_events(content: Tag | None, course_name: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> list[EventType]:
     if content is None:
-        print(f"No events content found for course: {course_name}")
+        log_warning("no_events_content", f"No events content found for course: {course_name}", course=course_name)
         return []
 
     header = content.find("div", recursive=False)
     if header is not None and header.get_text(" ", strip=True) != "Termine":
         return []
+
+    # Without a caller-provided client (e.g. ``parseCourse`` used directly), use
+    # a cached client so room fetches are stored/replayed too, and close it once.
+    own_client = client is None
+    if own_client:
+        client = create_cached_client(timeout=15.0)
 
     events = []
     for event_row in content.select("table tbody tr"):
@@ -272,7 +296,12 @@ def extract_events(content: Tag | None, course_name: str, client: httpx.Client |
         room_url = room_cell.find("a", attrs={"name": "appointmentRooms"}) if room_cell is not None else None
         room = None
         if room_url:
-            room = fetch_and_parse_room_details(room_url["href"], room_text, client or httpx.Client(), cancel_event, progress_tracker=progress_tracker)[2]  # type: ignore
+            room = fetch_and_parse_room_details(room_url["href"], room_text, client, cancel_event, progress_tracker=progress_tracker)[2]  # type: ignore
+            # The source lists a room, but fetching/parsing its detail page failed:
+            # keep the room name instead of dropping the location entirely. The room
+            # name is later merged with the detailed location if a fetch succeeds.
+            if room is None and room_text:
+                room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address=""))
         else:
             room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="")) if room_text else None
         staff = _clean_staff(staff_raw)
@@ -288,6 +317,8 @@ def extract_events(content: Tag | None, course_name: str, client: httpx.Client |
             "location": room,
             "staff": staff,
         })
+    if own_client:
+        client.close()
     return events
 
 
@@ -295,7 +326,7 @@ def _parse_date(value: str) -> date | None:
     # Expected format: Fr, 10. Apr. 2026
     m = re.search(r"(\d{1,2})\.\s*(\w{3})\.?\s*(\d{4})", value)
     if not m:
-        print(f"Failed to parse date: {value}")
+        log_warning("failed_date", f"Failed to parse date: {value}", value=value)
         return None
     return date(int(m.group(3)), _MONTHS.get(m.group(2), 0), int(m.group(1)))
 
@@ -304,6 +335,6 @@ def _parse_time(value: str) -> time | None:
     # Expected format: 14:00
     m = re.search(r"(\d{1,2}):(\d{2})", value)
     if not m:
-        print(f"Failed to parse time: {value}")
+        log_warning("failed_time", f"Failed to parse time: {value}", value=value)
         return None
     return time(int(m.group(1)), int(m.group(2)))

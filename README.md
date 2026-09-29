@@ -41,6 +41,75 @@ The crawler walks the full module tree, parses each module and its courses (incl
    fastapi dev src/api/main.py
    ```
 
+## Debugging the parser
+
+A full crawl + parse takes hours, so the parser is built around a local page
+store and JSON crawl snapshots that make iterations offline and fast.
+
+**Store local copies of pages.** The crawl tree is cached by Scrapy
+(`.scrapy/httpcache`), and every module/course/room page the parser fetches is
+cached in `.pagedata/` as raw HTML with a JSON sidecar. Re-parsing the same URLs
+is served from disk instead of the network. Override the location with
+`ALMAWEB_PAGE_STORE`, or disable caching with `ALMAWEB_PAGE_STORE=off`. The URL
+key strategy is configurable via `ALMAWEB_PAGE_KEY_STRATEGY` or
+`--key-strategy` (`exact` (default), `query-sorted`, or `ignore-arguments`); see
+the caveat in `src/parser/fetch.py`, since CampusNet carries page identity inside
+`ARGUMENTS`.
+
+**Rooms work offline too.** Room detail URLs are session-scoped
+(`…PRGNAME=ACTION&ARGUMENTS=-A<blob>`), so they cannot be replayed by URL. Room
+pages are therefore also indexed by **room name**, and `run_parse --offline`
+replays them by name. For a page store created before this index existed, build
+it once (fast, no network):
+
+```bash
+python -m src.parser.debug backfill-rooms
+```
+
+A fresh online crawl populates the name index automatically. Rooms whose detail
+page was never stored still fall back to a name-only location when offline.
+
+**Split crawl from parse with snapshots.** The spider writes every module it
+found to `snapshots/modules_latest.json` (plus a dated `crawl-<ts>.json`) before
+parsing, so crawling and parsing are independent, resumable steps:
+
+```bash
+scrapy crawl lecture_spider -a crawl_only=1          # crawl + snapshot only
+python -m src.parser.run_parse                        # parse from the snapshot
+python -m src.parser.run_parse --only "Rechnernetze"  # one module (regex)
+python -m src.parser.run_parse --offline --resume --dump-dir debug/modules
+```
+
+`--resume` skips module URLs recorded in `snapshots/processed_modules.txt`;
+failures are logged to `snapshots/failed_modules.jsonl`. Add
+`-a stream_snapshot=1` to stream modules to `snapshots/modules_stream.jsonl`
+while crawling, so a crash does not lose crawl progress.
+
+**Audit the whole dataset.** After a parse, check every row for missing links and
+data, and diff the crawl snapshot against the database to catch modules that were
+found but never stored (renames are reported separately from true misses):
+
+```bash
+python -m src.parser.audit --sample 10 --json audit.json
+```
+
+The exit code is non-zero on structural errors; `--strict` also fails on
+warnings. The report also groups the recoverable warnings recorded during
+parsing (`logs/parser-warnings.jsonl`, override with `ALMAWEB_LOG_DIR` or
+`--warnings-log`) so repeated `failed_date` / `no_events_content` /
+`room_fetch_error` patterns become visible across the whole run.
+
+**Debug a single page.** Fetch/store a page and parse it in isolation:
+
+```bash
+python -m src.parser.debug fetch "<url>"
+python -m src.parser.debug parse-module "<url|file>" --path Root --path "SoSe 26"
+python -m src.parser.debug parse-course "<url|file>"
+python -m src.parser.debug parse-room "<url|file>"
+```
+
+All debug artifacts (`.pagedata/`, `snapshots/`) are git-ignored.
+
 ## API
 
 Interactive documentation is available at `http://localhost:8000/docs` once the server is running.

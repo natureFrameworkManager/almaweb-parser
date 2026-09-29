@@ -12,6 +12,11 @@ __pycache__/
 .coverage
 .scrapy/
 
+# Parser debug artifacts (page store, crawl snapshots, dumps)
+.pagedata/
+snapshots/
+logs/
+
 # Virtual environments
 .venv
 env/
