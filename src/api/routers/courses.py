@@ -26,6 +26,7 @@ def get_courses(
     type: list[str] | None = Query(None, description="Course type values (repeatable; case-insensitive, partial match; OR within this filter), e.g. \"Vorlesung\", \"Seminar\"."),
     language: list[str] | None = Query(None, description="Course language values (repeatable; case-insensitive, partial match; OR within this filter)."),
     staff: list[str] | None = Query(None, description="Course staff values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs the course is taught by (repeatable; OR within this filter)."),
     has_events: bool | None = Query(None, description="Filter by whether a course has at least one event (true) or no events (false)."),
     weekly_hours_min: int | None = Query(None, description="Minimum weekly hours for the course"),
     weekly_hours_max: int | None = Query(None, description="Maximum weekly hours for the course"),
@@ -51,6 +52,8 @@ def get_courses(
         query = query.where(or_(*[Course.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if staff:
         query = query.where(or_(*[Course.staff.ilike(f"%{value}%") for value in staff])) # type: ignore
+    if staff_id:
+        query = query.where(Course.staff.any(Staff.id.in_(staff_id)))  # type: ignore
     if has_events is not None:
         events_exist = Course.events.any()  # type: ignore
         query = query.where(events_exist if has_events else ~events_exist)

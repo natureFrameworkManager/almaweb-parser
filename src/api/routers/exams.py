@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
 from sqlmodel import select
 
-from database.model import Course, Event, Module, Staff, ModuleExam
+from database.model import Course, Event, Module, Staff, ModuleExam, Semester
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_query, filter_query, sort_parameters, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
 from schemas import PaginatedResponse, ExamRead, CourseRead, EventRead, ModuleRead, StaffRead
 from .events import parse_iso_date, parse_hhmm_time
@@ -32,6 +32,8 @@ def get_exams(
     end_time_to: str | None = Query(None, description="Maximum end time (HH:MM:SS) for the exam"),
     required: bool | None = Query(None, description="Filter by whether an exam is required (true) or optional (false)."),    
     staff: list[str] | None = Query(None, description="Exam staff values (repeatable; case-insensitive, partial match; OR within this filter)."),
+    staff_id: list[int] | None = Query(None, description="Staff IDs the exam is conducted by (repeatable; OR within this filter)."),
+    semester_id: list[int] | None = Query(None, description="Semester IDs the exam occurs in (repeatable; OR within this filter)."),
     module_id: list[int] | None = Query(None, description="Module IDs the exam belongs to (repeatable; direct match; OR within this filter)."),
     module_name: list[str] | None = Query(None, description="Module name values (repeatable; case-insensitive, partial match; OR within this filter)."),
     module_number: list[str] | None = Query(None, description="Module number values (repeatable; case-insensitive, partial match; OR within this filter)."),
@@ -63,6 +65,10 @@ def get_exams(
         query = query.where(ModuleExam.required == required)
     if staff:
         query = query.where(or_(*[ModuleExam.staff.any(Staff.name.ilike(f"%{value}%")) for value in staff])) # type: ignore
+    if staff_id:
+        query = query.where(ModuleExam.staff.any(Staff.id.in_(staff_id)))  # type: ignore
+    if semester_id:
+        query = query.where(ModuleExam.semesters.any(Semester.id.in_(semester_id)))  # type: ignore
     if module_id:
         query = query.where(ModuleExam.module_id.in_(module_id)) # type: ignore
     if module_name or module_number:

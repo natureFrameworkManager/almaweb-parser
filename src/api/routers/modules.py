@@ -58,6 +58,8 @@ def get_modules(
         query = query.where(or_(*[Module.name.ilike(f"%{value}%") for value in name])) # type: ignore
     if number:
         query = query.where(or_(*[Module.number.ilike(f"%{value}%") for value in number])) # type: ignore
+    if language:
+        query = query.where(or_(*[Module.language.ilike(f"%{value}%") for value in language])) # type: ignore
     if degree_id:
         query = query.where(Module.degrees.any(Degree.id.in_(degree_id)))  # type: ignore
     if faculty_id:

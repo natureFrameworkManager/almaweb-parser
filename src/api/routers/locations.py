@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends
 from sqlmodel import select
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from database.model import Location, Building, Event, Module
 from .shared import SessionDep, export_parameters, export_event_parameters, paging_parameters, page_query, sort_parameters, sort_query, filter_query, fields_parameters, include_parameters, build_list_response, build_event_list_response, get_or_404, distinct_parameters, PROBLEM_RESPONSES, _ical_augment_including
@@ -26,7 +26,7 @@ def get_locations(
     seats_max: int | None = Query(None, ge=0, description="Maximum number of seats (inclusive)."),
     size_min: float | None = Query(None, ge=0, description="Minimum size in square meters (inclusive)."),
     size_max: float | None = Query(None, ge=0, description="Maximum size in square meters (inclusive)."),
-    accessible: bool | None = Query(None, description="Whether the location is accessible (true or false)."),
+    accessible: bool | None = Query(None, description="Filter by accessibility: true = accessible, false = not accessible/unknown. Matches the source 'Barrierefrei' value (excludes negated 'nicht barrierefrei')."),
     building_ids: list[int] | None = Query(None, description="Building ID values to filter locations within specific buildings (repeatable; OR within this filter)."),
     event_id: list[int] | None = Query(None, description="Event ID values to filter locations associated with specific events (repeatable; OR within this filter)."),
     has_events: bool | None = Query(None, description="Filter by whether a location has at least one event (true) or none (false)."),
@@ -50,6 +50,12 @@ def get_locations(
         query = query.where(Location.size >= size_min) # type: ignore
     if size_max is not None:
         query = query.where(Location.size <= size_max) # type: ignore
+    if accessible is not None:
+        # Location.accessibility holds the raw German "Barrierefrei" text; match
+        # "barrierefrei" unless it is negated (e.g. "nicht barrierefrei").
+        acc = func.lower(Location.accessibility)
+        is_accessible = acc.like("%barrierefrei%") & ~acc.like("%nicht%")
+        query = query.where(is_accessible if accessible else ~is_accessible)
     if building_ids:
         query = query.where(or_(*[Location.building_id == value for value in building_ids])) # type: ignore
     if event_id:
