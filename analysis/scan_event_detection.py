@@ -64,6 +64,8 @@ def main() -> int:
     pages = 0
     pages_with_rows = 0
     pages_rows_but_no_events = 0
+    dropped_rows = 0
+    dropped_files: list[str] = []
     pages_partial_drop = 0
     samples_dropped: list[str] = []
     samples_partial: list[str] = []
@@ -97,8 +99,12 @@ def main() -> int:
 
         if raw_rows and not events:
             pages_rows_but_no_events += 1
-            if len(samples_dropped) < 20:
-                samples_dropped.append(f"{name[:60]!r}  raw_rows={len(raw_rows)} section={'yes' if section else 'no'}")
+            dropped_rows += len(raw_rows)
+            if len(samples_dropped) < 30:
+                samples_dropped.append(
+                    f"{html.name}  {name[:55]!r}  raw_rows={len(raw_rows)} section={'yes' if section else 'no'}"
+                )
+            dropped_files.append(html.name)
         elif len(events) < len(raw_rows):
             pages_partial_drop += 1
             if len(samples_partial) < 20:
@@ -130,7 +136,8 @@ def main() -> int:
             break
 
     print(f"Scanned {pages} course pages; with Termine rows={pages_with_rows}")
-    print(f"Pages with raw rows but parser kept 0 events: {pages_rows_but_no_events}")
+    print(f"Pages with raw rows but parser kept 0 events: {pages_rows_but_no_events} "
+          f"(session rows lost: {dropped_rows})")
     for sample in samples_dropped:
         print(f"  {sample}")
     print(f"Pages where the parser kept fewer events than raw rows: {pages_partial_drop}")
@@ -149,6 +156,8 @@ def main() -> int:
             "pages": pages,
             "pages_with_rows": pages_with_rows,
             "pages_rows_but_no_events": pages_rows_but_no_events,
+            "dropped_rows": dropped_rows,
+            "dropped_files": dropped_files,
             "dropped_samples": samples_dropped,
             "pages_partial_drop": pages_partial_drop,
             "partial_samples": samples_partial,

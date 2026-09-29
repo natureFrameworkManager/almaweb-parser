@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Check module<->semester linking against the crawl snapshot (read-only).
 
-The spider deduplicates modules by ``(name, url)``, but a single module page URL
-can be reachable through several navigation paths whose ``SoSe``/``WiSe`` nodes
-differ (the same module is offered in more than one semester).
-``insert_module_graph`` scans the stored path and links the module to the *first*
-semester it finds, then ``break``s -- so a module offered in several semesters may
-only ever be linked to one. This script quantifies that from
-``snapshots/modules_latest.json`` without touching the network or writing data.
+The spider deduplicates modules by ``(name, url)``; a module offered in several
+semesters appears as several entries (one per semester URL) which the DB collapses
+onto one ``module`` row. ``insert_module_graph`` links that row to every semester
+found in the entry's path, so the question this script answers is: **does each
+stored module carry a link for every semester its snapshot entries mention?**
+
+Matching is by ``(number, name)`` -- the snapshot anchor text is "<number> <name>",
+while the DB stores only ``name``. (Earlier versions matched on the full anchor
+text and therefore reported every multi-semester module as under-linked.)
 
     python analysis/check_semester_links.py
-    python analysis/check_semester_links.py --json analysis/out_semester_links.json
+    python analysis/check_semester_links.py --json analysis/out2/semester_links.json
 """
 
 from __future__ import annotations
@@ -46,6 +48,12 @@ def semesters_of(path) -> list[str]:
     return found
 
 
+def split_name(name: str) -> tuple[str, str]:
+    """Snapshot anchor text is ``"<number> <name>"``; the DB stores only ``name``."""
+    parts = name.split(None, 1)
+    return (parts[0], parts[1].strip()) if len(parts) == 2 else (name, "")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", default=str(SNAPSHOT))
@@ -62,7 +70,7 @@ def main() -> int:
     multi_semester: list[tuple[str, list[str]]] = []
     unparsable = 0
     sem_counter: Counter[str] = Counter()
-    by_name: dict[str, set[str]] = defaultdict(set)
+    by_name: dict[tuple[str, str], set[str]] = defaultdict(set)
     for entry in modules:
         groups = path_groups(entry.get("path"))
         sems = semesters_of(entry.get("path"))
@@ -74,7 +82,7 @@ def main() -> int:
             sem_counter[s] += 1
         if not sems:
             unparsable += 1
-        by_name[str(entry.get("name", ""))].update(sems)
+        by_name[split_name(str(entry.get("name", "")))].update(sems)
 
     print(f"\nEntries with >1 path group: {multi_path}")
     print(f"Entries with >1 distinct semester across paths: {len(multi_semester)}")
@@ -89,14 +97,14 @@ def main() -> int:
     con = sqlite3.connect(args.db)
     cur = con.cursor()
     rows = cur.execute(
-        "SELECT m.name, s.name FROM module m "
+        "SELECT m.number, m.name, s.name FROM module m "
         "JOIN modulesemesterlink l ON l.module_id = m.id "
         "JOIN semester s ON s.id = l.semester_id"
     ).fetchall()
-    db_by_name: dict[str, set[str]] = defaultdict(set)
+    db_by_name: dict[tuple[str, str], set[str]] = defaultdict(set)
     db_sem_counter: Counter[str] = Counter()
-    for name, sem in rows:
-        db_by_name[name].add(sem)
+    for number, name, sem in rows:
+        db_by_name[(number or "", name or "")].add(sem)
         db_sem_counter[sem] += 1
 
     print(f"\nDB semester histogram ({len(db_sem_counter)} distinct):")
@@ -117,8 +125,8 @@ def main() -> int:
         if len(sems) > 1 and len(db_sems) < len(sems):
             underlinked.append((name, sorted(sems), sorted(db_sems)))
     print(f"\nEntries with >1 snapshot semester but fewer DB semester links: {len(underlinked)}")
-    for name, snap_sems, db_sems in underlinked[: args.sample]:
-        print(f"  {name!r}\n      snapshot={snap_sems}\n      db      ={db_sems}")
+    for (number, name), snap_sems, db_sems in underlinked[: args.sample]:
+        print(f"  {number} {name!r}\n      snapshot={snap_sems}\n      db      ={db_sems}")
 
     if args.json:
         Path(args.json).write_text(json.dumps({
@@ -130,7 +138,7 @@ def main() -> int:
             "db_semesters": dict(db_sem_counter),
             "only_in_snapshot": only_snap,
             "only_in_db": only_db,
-            "underlinked": [{"name": n, "snapshot": s, "db": d} for n, s, d in underlinked],
+            "underlinked": [{"number": n[0], "name": n[1], "snapshot": s, "db": d} for n, s, d in underlinked],
         }, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\nWrote {args.json}")
     return 0
