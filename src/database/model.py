@@ -134,6 +134,8 @@ class Module(SQLModel, table=True):
     elective_classification: str = ""
     grading_note: str = ""
     faculty_id: int | None = Field(foreign_key="faculty.id", index=True) # The faculty to which the module belongs, if known
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     faculty: "Faculty" = Relationship(back_populates="modules")
     # Canonical shape is a list of path groups (``list[list[str]]``); older rows may
@@ -170,6 +172,8 @@ class Course(SQLModel, table=True):
     official_description: str = ""
     organisational: str = ""
     literature: str = ""
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     staff: list["Staff"] = Relationship(back_populates="courses", link_model=CourseStaffLink)
     semesters: list["Semester"] = Relationship(back_populates="courses", link_model=CourseSemesterLink)
@@ -191,6 +195,8 @@ class Event(SQLModel, table=True):
     end_time: time
     event_date: date = Field(index=True) # Indexed: date-range filters (/schedule/daily|weekly|monthly, /events) scan this column
     location_id: int | None = Field(foreign_key="location.id", index=True) # TODO: Remove None
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     location: "Location" = Relationship(back_populates="events")
     staff: list["Staff"] = Relationship(back_populates="events", link_model=EventStaffLink)
@@ -211,6 +217,8 @@ class Location(SQLModel, table=True):
     size: float | None = None # The size of the location in square meters, if known
     accessibility: str = "" # Information about the accessibility of the location, e.g. "barrierefrei", "nicht barrierefrei", etc.
     building_id: int | None = Field(foreign_key="building.id", index=True) # The building where the location is situated, if known
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     building: "Building" = Relationship(back_populates="locations")
     events: list["Event"] = Relationship(back_populates="location")
@@ -224,6 +232,8 @@ class Building(SQLModel, table=True):
     name: str = ""
     short_name: str = "" # A short name or code for the building, e.g. "Hauptgebäude", "Informatik-Gebäude", etc.
     address: str = "" # The address of the building, e.g. "Musterstraße 1, 12345 Musterstadt"
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     locations: list["Location"] = Relationship(back_populates="building")
 
@@ -318,6 +328,8 @@ class ModuleExam(SQLModel, table=True):
     start_time: time | None = None
     end_time: time | None = None
     required: bool = False # Whether the exam is required for passing the module
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     staff: list["Staff"] = Relationship(back_populates="exams", link_model=ModuleExamStaffLink)
     semesters: list["Semester"] = Relationship(back_populates="exams", link_model=ModuleExamSemesterLink)
@@ -338,6 +350,8 @@ class ModuleAchievement(SQLModel, table=True):
     required: bool = False    # "Leistungskombination" == "Ja"
     weight: float | None = None  # "Gewichtung"
     combination: str = ""     # raw "Leistungskombination" value
+    # Source AlmaWeb page this record was parsed from ("" when unknown/derived).
+    url: str = ""
 
     module: "Module" = Relationship(back_populates="achievements")
 

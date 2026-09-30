@@ -75,6 +75,11 @@ def _add_common_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _source_url(target: str) -> str | None:
+    """Return ``target`` as a source URL, or None for local files."""
+    return target if target.startswith(("http://", "https://")) else None
+
+
 def _cmd_fetch(args) -> int:
     with create_cached_client(offline=args.offline, refresh=args.refresh) as client:
         if args.target.startswith("http"):
@@ -93,7 +98,7 @@ def _cmd_parse_module(args) -> int:
         set_room_fetch_enabled(False)
     with create_cached_client(offline=args.offline, refresh=args.refresh) as client:
         html = _fetch_text(client, args.target)
-        module = parseModule(html, path=list(args.path or []), client=client)
+        module = parseModule(html, path=list(args.path or []), client=client, url=_source_url(args.target))
     if module is None:
         print("parseModule returned None", file=sys.stderr)
         return 1
@@ -106,7 +111,7 @@ def _cmd_parse_course(args) -> int:
         set_room_fetch_enabled(False)
     with create_cached_client(offline=args.offline, refresh=args.refresh) as client:
         html = _fetch_text(client, args.target)
-        course = parseCourse(html, client=client)
+        course = parseCourse(html, client=client, url=_source_url(args.target))
     if course is None:
         print("parseCourse returned None", file=sys.stderr)
         return 1
@@ -117,7 +122,7 @@ def _cmd_parse_course(args) -> int:
 def _cmd_parse_room(args) -> int:
     with create_cached_client(offline=args.offline, refresh=args.refresh) as client:
         html = _fetch_text(client, args.target)
-    room = parseRoom(html)
+    room = parseRoom(html, url=_source_url(args.target))
     if room is None:
         print("parseRoom returned None", file=sys.stderr)
         return 1

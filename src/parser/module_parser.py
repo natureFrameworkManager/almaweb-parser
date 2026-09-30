@@ -238,7 +238,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: ClientLike
         return index, None
 
     try:
-        return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+        return index, parseModule(response.text, path=module.path, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker, url=url)
     except Exception as e:
         # Distinguish a parser bug/value problem from a network failure. With the
         # parsers now total this should only fire on genuinely unexpected markup.
@@ -252,7 +252,7 @@ def _fetch_and_parse_module(index: int, module: "ModuleLink", client: ClientLike
         return index, None
 
 
-def parseModule(html_content: str, path: list[str] | list[list[str]], client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> ModuleType | None:
+def parseModule(html_content: str, path: list[str] | list[list[str]], client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None, url: str | None = None) -> ModuleType | None:
     if _cancelled(cancel_event):
         return None
 
@@ -289,13 +289,13 @@ def parseModule(html_content: str, path: list[str] | list[list[str]], client: Cl
         log_warning("module_parse_error", f"Failed to parse courses for {name}: {e}", module=name, error=str(e))
         courses = []
     try:
-        exams = extract_exams(find_exam_section(left_content), name, progress_tracker=progress_tracker)
+        exams = extract_exams(find_exam_section(left_content), name, progress_tracker=progress_tracker, url=url)
     except Exception as e:
         # A single bad exam row must not drop the whole module.
         log_warning("module_parse_error", f"Failed to parse exams for {name}: {e}", module=name, error=str(e))
         exams = []
     try:
-        achievements = extract_achievements(find_achievements_table(left_content), name)
+        achievements = extract_achievements(find_achievements_table(left_content), name, url=url)
     except Exception as e:
         log_warning("module_parse_error", f"Failed to parse achievements for {name}: {e}", module=name, error=str(e))
         achievements = []
@@ -324,6 +324,7 @@ def parseModule(html_content: str, path: list[str] | list[list[str]], client: Cl
         "courses": courses,
         "exams": exams,
         "achievements": achievements,
+        "url": url or "",
     }
     room_count = len({
         (location.get("name") or location.get("external_id"))
@@ -481,7 +482,7 @@ def find_achievements_table(right_content: Tag | None) -> Tag | None:
     return table if isinstance(table, Tag) else None
 
 
-def extract_achievements(table: Tag | None, module_name: str) -> list[AchievementType]:
+def extract_achievements(table: Tag | None, module_name: str, url: str | None = None) -> list[AchievementType]:
     """Extract ``Modulabschlussleistungen`` (achievements) rows.
 
     Columns are identified by their semantic class names:
@@ -515,6 +516,7 @@ def extract_achievements(table: Tag | None, module_name: str) -> list[Achievemen
             "required": _WHITESPACE_RE.sub(" ", combination_raw).strip() == "Ja",
             "weight": parse_float(weight_raw) if weight_raw else None,
             "combination": _WHITESPACE_RE.sub(" ", combination_raw).strip(),
+            "url": url or "",
         })
     return achievements
 
@@ -528,7 +530,7 @@ def parse_exam_datetime(datetime_str: str) -> tuple[str, str, str]:
         return date_str, start_time, end_time
     return "", "", ""
 
-def extract_exams(content: Tag | None, course_name: str, progress_tracker=None) -> list[ExamType]:
+def extract_exams(content: Tag | None, course_name: str, progress_tracker=None, url: str | None = None) -> list[ExamType]:
     if content is None:
         log_warning("no_exams_content", f"No exams content found for course: {course_name}", course=course_name)
         return []
@@ -585,5 +587,6 @@ def extract_exams(content: Tag | None, course_name: str, progress_tracker=None) 
             "end_time": None if end_time == "" else _parse_time(end_time),
             "staff": staff,
             "required": required,
+            "url": url or "",
         })
     return exams

@@ -73,9 +73,11 @@ app = FastAPI(
         "`elective_classification`, `grading_note` and to course `official_description`, `organisational` "
         "and `literature`.\n"
         "- **`Module.prerequisites`** is a map keyed by study-programme context (or the generic key "
-        "`allgemein`); each value is the requirement text for that context."
+        "`allgemein`); each value is the requirement text for that context.\n"
+        "- **`url`** on modules, courses, events, exams, achievements, locations and buildings is the "
+        "exact AlmaWeb page the record was parsed from, so any value can be checked against its source."
     ),
-    version="1.2.1",
+    version="1.3.0",
     root_path=PROXY_ROOT_PATH
 )
 

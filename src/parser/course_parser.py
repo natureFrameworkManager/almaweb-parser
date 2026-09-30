@@ -185,7 +185,7 @@ def _fetch_and_parse_course(index: int, url: str, client: ClientLike, cancel_eve
         return index, False, None
 
     try:
-        return index, True, parseCourse(response.text, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+        return index, True, parseCourse(response.text, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker, url=url)
     except Exception as e:
         # Distinguish a parser bug/value problem from a network failure.
         log_warning(
@@ -196,7 +196,7 @@ def _fetch_and_parse_course(index: int, url: str, client: ClientLike, cancel_eve
         )
         return index, False, None
 
-def parseCourse(html_content: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> CourseType | None:
+def parseCourse(html_content: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None, url: str | None = None) -> CourseType | None:
     soup = BeautifulSoup(html_content, 'html.parser')
     header = soup.find("h1")
     if not header:
@@ -211,7 +211,7 @@ def parseCourse(html_content: str, client: ClientLike | None = None, cancel_even
         number, name = header_parts
     values = extract_course_values(soup.select_one("#contentlayoutleft"))
     try:
-        events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker)
+        events = extract_events(find_termine_section(soup.select_one("#contentlayoutright")), name, client=client, cancel_event=cancel_event, progress_tracker=progress_tracker, url=url)
     except Exception as e:
         # A single bad row must not drop the whole course.
         log_warning("course_parse_error", f"Failed to parse events for {name}: {e}", course=name, error=str(e))
@@ -237,7 +237,8 @@ def parseCourse(html_content: str, client: ClientLike | None = None, cancel_even
         "organisational": values["organisational"],
         "literature": values["literature"],
         "events": events,
-        "status": "almaweb"
+        "status": "almaweb",
+        "url": url or "",
     }
 
 
@@ -294,7 +295,7 @@ def extract_course_values(content: Tag | None) -> dict[str, str]:
 
     return values
 
-def extract_events(content: Tag | None, course_name: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None) -> list[EventType]:
+def extract_events(content: Tag | None, course_name: str, client: ClientLike | None = None, cancel_event: Event | None = None, progress_tracker=None, url: str | None = None) -> list[EventType]:
     if content is None:
         log_warning("no_events_content", f"No events content found for course: {course_name}", course=course_name)
         return []
@@ -351,9 +352,9 @@ def extract_events(content: Tag | None, course_name: str, client: ClientLike | N
             # keep the room name instead of dropping the location entirely. The room
             # name is later merged with the detailed location if a fetch succeeds.
             if room is None and room_text:
-                room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address=""))
+                room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="", url=""), url=url or "")
         else:
-            room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="")) if room_text else None
+            room = RoomType(name=room_text, external_id="", description="", type="", seats=None, size=None, accessibility="", building=BuildingType(name="", short_name="", address="", url=""), url=url or "") if room_text else None
         staff = _clean_staff(staff_raw)
 
         if progress_tracker is not None:
@@ -366,6 +367,7 @@ def extract_events(content: Tag | None, course_name: str, client: ClientLike | N
             "end_time": _parse_time(end_raw),
             "location": room,
             "staff": staff,
+            "url": url or "",
         })
     if own_client:
         client.close()

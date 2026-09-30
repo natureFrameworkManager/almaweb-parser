@@ -108,6 +108,7 @@ class BuildingRead(ReadSchema):
     name: str | None = None
     short_name: str | None = None
     address: str | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb page this record was parsed from.")
     # Relationships (populated via ?include=)
     locations: list[LocationRead] | None = None
 
@@ -161,6 +162,7 @@ class LocationRead(ReadSchema):
     size: float | None = None
     accessibility: str | None = None
     building_id: int | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb page this record was parsed from (the room detail page, or the course page for name-only rooms).")
     # Relationships (populated via ?include=)
     building: BuildingRead | None = None
     events: list[EventRead] | None = None
@@ -189,6 +191,7 @@ class WeeklyRead(ReadSchema):
     end_time: time | None = None
     weekday: int
     location_id: int | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb page this record was parsed from.")
     # Relationships (populated via ?include=)
     location: LocationRead | None = None
     staff: list[StaffRead] | None = None
@@ -218,6 +221,7 @@ class EventRead(ReadSchema):
     end_time: time | None = None
     event_date: date | None = None
     location_id: int | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb page this record was parsed from (the course page of the event).")
     # Relationships (populated via ?include=)
     location: LocationRead | None = None
     staff: list[StaffRead] | None = None
@@ -252,6 +256,7 @@ class ExamRead(ReadSchema):
     end_time: time | None = None
     required: bool | None = None
     module_id: int | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb module page this exam was parsed from.")
     # Relationships (populated via ?include=)
     staff: list[StaffRead] | None = None
     semesters: list[SemesterRead] | None = None
@@ -294,6 +299,7 @@ class CourseRead(ReadSchema):
     official_description: str | None = Field(default=None, description="Free text; see the top-level 'Data notes': may contain `\\n` line breaks.")
     organisational: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
     literature: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
+    url: str | None = Field(default=None, description="Source AlmaWeb course page this record was parsed from.")
     # Relationships (populated via ?include=)
     staff: list[StaffRead] | None = None
     semesters: list[SemesterRead] | None = None
@@ -326,6 +332,7 @@ class AchievementRead(ReadSchema):
     weight: float | None = None
     combination: str | None = None
     module_id: int | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb module page this achievement was parsed from.")
     # Relationships (populated via ?include=)
     module: ModuleRead | None = None
 
@@ -377,6 +384,7 @@ class ModuleRead(ReadSchema):
     grading_note: str | None = Field(default=None, description="Free text; may contain `\\n` line breaks.")
     faculty_id: int | None = None
     path: list[list[str]] | None = None
+    url: str | None = Field(default=None, description="Source AlmaWeb module page this record was parsed from.")
     # Relationships (populated via ?include=)
     faculty: FacultyRead | None = None
     responsible_persons: list[StaffRead] | None = None

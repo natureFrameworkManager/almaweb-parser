@@ -5,6 +5,8 @@ class BuildingType(TypedDict):
     name: str
     short_name: str
     address: str
+    # Source page this record was parsed from (empty when unknown/derived).
+    url: str
 
 class RoomType(TypedDict):
     name: str
@@ -15,6 +17,7 @@ class RoomType(TypedDict):
     size: float | None
     accessibility: str
     building: BuildingType
+    url: str
 
 class EventType(TypedDict):
     number: str
@@ -23,6 +26,7 @@ class EventType(TypedDict):
     end_time: time
     location: RoomType | None
     staff: list[str]
+    url: str
 
 class CourseType(TypedDict):
     name: str
@@ -37,6 +41,7 @@ class CourseType(TypedDict):
     official_description: str
     organisational: str
     literature: str
+    url: str
 
 class ExamType(TypedDict):
     name: str
@@ -45,6 +50,7 @@ class ExamType(TypedDict):
     end_time: time
     staff: list[str]
     required: bool
+    url: str
 
 class AchievementType(TypedDict):
     """A ``Modulabschlussleistung`` / achievement row from the "Leistungen" table.
@@ -58,6 +64,7 @@ class AchievementType(TypedDict):
     required: bool
     weight: float | None
     combination: str
+    url: str
 
 class ModuleType(TypedDict):
     name: str
@@ -82,3 +89,4 @@ class ModuleType(TypedDict):
     courses: list[CourseType | None]
     exams: list[ExamType]
     achievements: list[AchievementType]
+    url: str

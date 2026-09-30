@@ -70,6 +70,7 @@ def create_db_and_tables():
     _migrate_degree_columns()
     _migrate_module_columns()
     _migrate_course_columns()
+    _migrate_source_url_columns()
     _migrate_indexes()
 
 
@@ -132,6 +133,23 @@ def _migrate_course_columns():
         "organisational": "VARCHAR DEFAULT ''",
         "literature": "VARCHAR DEFAULT ''",
     })
+
+
+# Data tables that carry the ``url`` (source AlmaWeb page) column.
+_SOURCE_URL_TABLES = (
+    "module", "course", "event", "location", "building",
+    "moduleexam", "moduleachievement",
+)
+
+
+def _migrate_source_url_columns():
+    """Backfill the ``url`` (source page) column on every data table.
+
+    The column is set by the parser so a stored record can be traced back to the
+    exact AlmaWeb page it was parsed from.
+    """
+    for table in _SOURCE_URL_TABLES:
+        _add_columns_if_missing(table, {"url": "VARCHAR DEFAULT ''"})
 
 
 # Indexes introduced after the initial schema. ``SQLModel.metadata.create_all()`` only creates
@@ -277,12 +295,16 @@ def _get_or_insert_building(session: Session, building_data: BuildingType) -> in
     if building is not None:
         if building.id is None:
             raise RuntimeError("Building to add to database has no id")
+        if not building.url and building_data.get("url"):
+            building.url = building_data["url"]
+            session.add(building)
         return building.id
 
     building = Building(
         name=building_data["name"],
         short_name=building_data["short_name"],
-        address=building_data["address"]
+        address=building_data["address"],
+        url=building_data.get("url", ""),
     )
     session.add(building)
     session.flush()
@@ -307,6 +329,9 @@ def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
     if location is not None:
         if location.id is None:
             raise RuntimeError("Location to add to database has no id")
+        if not location.url and room_data.get("url"):
+            location.url = room_data["url"]
+            session.add(location)
         return location.id
 
     location = Location(
@@ -317,7 +342,8 @@ def _get_or_insert_location(session: Session, room_data: RoomType) -> int:
         seats=room_data.get("seats"),
         size=room_data.get("size"),
         accessibility=room_data.get("accessibility", ""),
-        building_id=building_id
+        building_id=building_id,
+        url=room_data.get("url", ""),
     )
     session.add(location)
     session.flush()
@@ -623,6 +649,8 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
             module.elective_course_count = module_data["elective_course_count"]
         if module_data.get("prerequisites") and not module.prerequisites:
             module.prerequisites = module_data["prerequisites"]
+        if not module.url and module_data.get("url"):
+            module.url = module_data["url"]
         session.add(module)
         return module.id, False
     
@@ -653,7 +681,8 @@ def _get_or_insert_module(session: Session, module_data: ModuleType) -> tuple[in
         elective_classification=module_data.get("elective_classification", ""),
         grading_note=module_data.get("grading_note", ""),
         path=_normalise_path_groups(module_data.get("path", [])),
-        faculty_id=faculty_id
+        faculty_id=faculty_id,
+        url=module_data.get("url", ""),
     ) # type: ignore
     # Add the module to the session and flush (save to DB) to get an ID assigned, which is needed for linking courses
     session.add(module)
@@ -706,6 +735,8 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
                 setattr(course, field, value)
         if course_data.get("weekly_hours") and not course.weekly_hours:
             course.weekly_hours = course_data["weekly_hours"]
+        if not course.url and course_data.get("url"):
+            course.url = course_data["url"]
         session.add(course)
         return course.id, False
 
@@ -721,6 +752,7 @@ def _get_or_insert_course(session: Session, course_data: CourseType) -> tuple[in
         official_description=course_data.get("official_description", ""),
         organisational=course_data.get("organisational", ""),
         literature=course_data.get("literature", ""),
+        url=course_data.get("url", ""),
     )  # type: ignore
     # Add the course to the session and flush (save to DB) to get an ID assigned, which is needed for linking events
     session.add(course)
@@ -764,6 +796,9 @@ def _insert_exam_if_new(session: Session, module_id: int, exam_data: ExamType) -
         for staff_name in exam_data.get("staff", []):
             staff_id = _get_or_insert_staff(session, staff_name)
             _link_module_exam_staff(session, exam.id, staff_id)
+        if not exam.url and exam_data.get("url"):
+            exam.url = exam_data["url"]
+            session.add(exam)
         return exam.id, False
 
     # Unpacking of exam_data into ModuleExam constructor
@@ -773,7 +808,8 @@ def _insert_exam_if_new(session: Session, module_id: int, exam_data: ExamType) -
         start_time=exam_data["start_time"],
         end_time=exam_data["end_time"],
         exam_date=exam_data["date"],
-        required=exam_data["required"]
+        required=exam_data["required"],
+        url=exam_data.get("url", ""),
     )  # type: ignore
     session.add(exam)
     session.flush()
@@ -805,6 +841,9 @@ def _insert_achievement_if_new(session: Session, module_id: int, achievement_dat
     if achievement is not None:
         if achievement.id is None:
             raise RuntimeError("Achievement to add to database has no id")
+        if not achievement.url and achievement_data.get("url"):
+            achievement.url = achievement_data["url"]
+            session.add(achievement)
         return achievement.id, False
 
     achievement = ModuleAchievement(
@@ -813,6 +852,7 @@ def _insert_achievement_if_new(session: Session, module_id: int, achievement_dat
         required=achievement_data["required"],
         weight=achievement_data["weight"],
         combination=achievement_data.get("combination", ""),
+        url=achievement_data.get("url", ""),
     )  # type: ignore
     session.add(achievement)
     session.flush()
@@ -881,6 +921,9 @@ def _insert_event_if_new(session: Session, event_data: EventType, course_id: int
         for staff_name in event_data.get("staff", []):
             staff_id = _get_or_insert_staff(session, staff_name)
             _link_event_staff(session, event.id, staff_id)
+        if not event.url and event_data.get("url"):
+            event.url = event_data["url"]
+            session.add(event)
         return event.id, False
 
     # Unpacking of event_data into CourseEvent constructor, adding course_id for the foreign key relationship
@@ -890,7 +933,8 @@ def _insert_event_if_new(session: Session, event_data: EventType, course_id: int
         start_time=event_data["start_time"],
         end_time=event_data["end_time"],
         event_date=event_data["event_date"],
-        location_id=location_id
+        location_id=location_id,
+        url=event_data.get("url", ""),
     )  # type: ignore
     session.add(event)
     session.flush()

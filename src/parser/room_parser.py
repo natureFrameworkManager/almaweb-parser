@@ -96,6 +96,7 @@ def fetch_and_parse_room_details(url: str, room_text: str, client: ClientLike, c
     store = getattr(client, "store", None) or get_page_store()
     refresh = bool(getattr(client, "refresh", False))
     name_key = room_page_key(room_text) if room_text else None
+    absolute_url = url if url.startswith("http") else "https://almaweb.uni-leipzig.de" + url
 
     try:
         cached = _cache_get(room_text)
@@ -107,17 +108,14 @@ def fetch_and_parse_room_details(url: str, room_text: str, client: ClientLike, c
         if name_key is not None and not refresh:
             html = store.get(name_key)
             if html is not None:
-                room = parseRoom(html)
+                room = parseRoom(html, url=absolute_url)
                 if room is not None:
                     _cache_put(room_text, room)
                     return (0, False, room)
 
-        if not url.startswith("http"):
-            url = "https://almaweb.uni-leipzig.de" + url
-
-        response = client.get(url)
+        response = client.get(absolute_url)
         response.raise_for_status()
-        room = parseRoom(response.text)
+        room = parseRoom(response.text, url=absolute_url)
         _cache_put(room_text, room)
 
         # Persist under the room name so future offline re-parses can find it.
@@ -168,7 +166,7 @@ def backfill_room_name_cache(store=None, progress=None) -> dict[str, int]:
             progress(f"[rooms] indexed {indexed} of {scanned} room pages")
     return {"scanned": scanned, "indexed": indexed}
 
-def parseRoom(html_content: str) -> RoomType | None:
+def parseRoom(html_content: str, url: str | None = None) -> RoomType | None:
     soup = BeautifulSoup(html_content, "html.parser")
     header = soup.find("h1")
     if not header:
@@ -187,6 +185,7 @@ def parseRoom(html_content: str) -> RoomType | None:
         "name": building_values.get("name", ""),
         "short_name": building_values.get("short_name", ""),
         "address": building_values.get("address", ""),
+        "url": url or "",
     }
 
     room: RoomType = {
@@ -198,6 +197,7 @@ def parseRoom(html_content: str) -> RoomType | None:
         "size": _parse_float_or_none(room_values.get("size", "")),
         "accessibility": room_values.get("accessibility", ""),
         "building": building,
+        "url": url or "",
     }
 
     # Free BeautifulSoup tree and raw HTML after extracting all data
