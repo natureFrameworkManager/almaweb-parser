@@ -162,12 +162,17 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 **Scrapy settings** - Throttling, caching, and other Scrapy options are in `src/settings.py`. AutoThrottle is enabled by default to avoid overloading the server.
 
 ## ToDo
-- [x] Handle modules with multiple paths [src/parser/module_parser.py](src/parser/module_parser.py)
-- [x] Handle rooms with only a name and the resulting empty building [src/parser/course_parser.py](src/parser/course_parser.py)
-- [ ] Handle event times from 00:00 to 24:00 currently error if hour outside of 0-23 range [src/parser/course_parser.py](src/parser/course_parser.py)
-- [x] Handle semesters across effected datatypes correctly. Modules are as a link not sufficient for the linking. [src/parser/module_parser.py](src/parser/module_parser.py)
-- [x] Apply the semester-id filters correctly to all data types. [src/api/routers/modules.py](src/api/routers/modules.py), [src/api/routers/courses.py](src/api/routers/courses.py), [src/api/routers/events.py](src/api/routers/events.py)
-- [x] Fix and document all API query parameters (500s, silent no-ops, invalid values). See [TODO.md](TODO.md) "Query-parameter audit"
+
+Open work is tracked in [TODO.md](TODO.md) and prioritised in [plan.md](plan.md).
+Current highlights from the offline page audit:
+
+- [ ] Find the course `Termine` table on every page layout (374 courses currently store no sessions).
+- [ ] Keep all rooms of a multi-room session (405 rows keep only the first room).
+- [ ] Parse exam dates whose month has no trailing dot (`Mai`) and handle `ohne Termin`.
+- [ ] Capture achievement `Leistungskombination` group rows.
+- [ ] Parse course-level "Veranstaltungseigene Prüfungen".
+- [ ] Do not abort a whole parse run when a single module fails to insert.
+- [ ] Merge/enrich name-only locations (410 locations, 13 173 events without building/address).
 
 ## Future Ideas
 
@@ -178,19 +183,8 @@ See [ical-format-api.md](ical-format-api.md) for planned improvements to iCal ti
 - [ ] Add recovery from partial failures (if one module fails to parse, still ingest the rest of the data)
 - [ ] Resume from the last successful point instead of starting over if the crawler exits halfway
 
-### API — Filters
-- [x] Modules: filter by specific `path` segments or exact path prefixes instead of only free-text search
-- [x] Courses: filter by exact staff members within the parsed `staff` list
-- [x] Events: filter by exact staff members within the parsed event `staff` list
-- [x] Events: add normalized location filters to distinguish building, room, and free-text notes
-
-### API — Endpoints
-- [x] Expose a room/location schedule endpoint (all events in a given room on a given day)
+### API
+- [ ] Make endpoints compatible with the [planer app](https://github.com/natureFrameworkManager/planer)
 
 ### Data Model
-- [x] Parse degree information from the path (via the `path_parser` second pass; semester info handled via `start_semester`)
-- [ ] Optimize event storage (57k+ entries per semester)
-
-### Infrastructure
-- [x] Containerize with Docker
-- [ ] Make endpoints compatible with the [planer app](https://github.com/natureFrameworkManager/planer)
+- [ ] Optimize event storage (159k+ events per run)
