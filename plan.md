@@ -1,43 +1,10 @@
 # AlmaWeb parser/API fix plan
 
 Consolidated plan for all open fixes found in audit #1 (`analysis/FINDINGS.md`)
-and audit #2 (`analysis/out2/FINDINGS2.md`), plus the source-URL feature and the
-doc/version updates. Ordered by impact.
+and audit #2 (`analysis/out2/FINDINGS2.md`). Ordered by impact.
 
 Legend: **P1** = data loss / correctness, **P2** = important, **P3** = quality,
 **P4** = polish. Each item lists the files, the approach, tests and risk.
-
----
-
-## Done already (this change set)
-
-### S1. Save the source page URL on every datatype (implemented)
-
-Goal: every stored record can be traced to the AlmaWeb page it was parsed from.
-
-* `parser/types.py`: `url: str` added to `ModuleType`, `CourseType`, `EventType`,
-  `RoomType`, `BuildingType`, `ExamType`, `AchievementType`.
-* `database/model.py`: `url: str = ""` column added to `Module`, `Course`,
-  `Event`, `Location`, `Building`, `ModuleExam`, `ModuleAchievement`.
-* `database/database.py`: `_migrate_source_url_columns()` adds the column to
-  existing DBs; every `_get_or_insert_*` / `_insert_*_if_new` writes the URL and
-  backfills it on re-encounter if still empty.
-* `module_parser.parseModule(..., url=)`, `course_parser.parseCourse(..., url=)`,
-  `room_parser.parseRoom(html, url=)`; `_fetch_and_parse_*` pass the fetched URL;
-  `debug.py` passes the CLI URL.
-* Semantics: module/ exams/achievements -> module page; course/events ->
-  course page; location/building -> room detail page (or the course page for
-  name-only rooms).
-* API: `url` exposed on `ModuleRead`, `CourseRead`, `EventRead`, `WeeklyRead`,
-  `ExamRead`, `AchievementRead`, `LocationRead`, `BuildingRead`.
-* Verified: parse-level (all types) and DB-level (temp DB, all 7 tables) plus the
-  migration on a copy of the production DB.
-
-### S2. Audit #1 parser fixes (implemented earlier)
-
-Prerequisite line preservation + `parse_prerequisites` rewrite, block-aware
-`text_with_structure`, course text glue fix, room text structure — verified by
-`scan_prerequisites.py` (0 lost), `compare_*`, `scan_text_separators.py`.
 
 ---
 
@@ -207,14 +174,8 @@ The `24:00` crash is fixed (`_parse_time` maps it to `23:59`); the scan should s
 labelling those 19 modules "at risk" (or check the actual parser result).
 **Risk:** none (analysis tool).
 
-### F14. API/docs: `url` + multi-line data notes
-
-Already done: version `1.3.0`, "Data notes" in the OpenAPI description, `url`
-exposed on all read schemas.
-
 ## Versioning
 
-* Data-shape change (source URL) -> **API minor bump** (`1.3.0`, done).
 * F2/F5 add relations/entities -> further **minor** bump (e.g. `1.4.0`) with a
   changelog note; no breaking removal.
 * Parser changes alone do not need an API bump, but the DB must be re-parsed.
