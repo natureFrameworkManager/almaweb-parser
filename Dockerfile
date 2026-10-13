@@ -30,6 +30,9 @@ RUN touch /var/log/almaweb-cron.log
 # Entrypoint: start cron daemon, then exec FastAPI as appuser (PID 1)
 RUN echo '#!/bin/bash'                                                                      > /entrypoint.sh && \
     echo 'set -e'                                                                          >> /entrypoint.sh && \
+    echo 'chown appuser:appuser /data'                                                     >> /entrypoint.sh && \
+    echo 'for db_file in /data/database.db /data/database.db-wal /data/database.db-shm /data/database.db-journal; do if [ -e "$db_file" ]; then chown appuser:appuser "$db_file"; fi; done' \
+                                                                                           >> /entrypoint.sh && \
     echo '/usr/sbin/cron'                                                                  >> /entrypoint.sh && \
     echo 'exec gosu appuser fastapi run src/api/main.py --port 80 --proxy-headers'        >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
